@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://b62yrnpdtxpxm"]
+
+[ext_resource type="Script" uid="uid://p5fojlsjl5yt" path="res://car.gd" id="1_2yx2o"]
+[ext_resource type="Texture2D" uid="uid://bs43fso88ek7f" path="res://assets/delivery_truck.png" id="2_uoj53"]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_htcoj"]
+radius = 108.99999
+height = 482.0
+
+[node name="Car" type="CharacterBody2D" unique_id=1945259181]
+script = ExtResource("1_2yx2o")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1469640923]
+position = Vector2(-0.29338455, -0.15743637)
+rotation = 1.5708
+scale = Vector2(11.588658, 11.58866)
+texture = ExtResource("2_uoj53")
+region_enabled = true
+region_rect = Rect2(5.214575, 2.099083, 22.633423, 41.349525)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=673256990]
+rotation = 1.5708
+shape = SubResource("CapsuleShape2D_htcoj")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=522608276]
+zoom = Vector2(0.25, 0.25)

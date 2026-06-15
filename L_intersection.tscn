@@ -1,0 +1,55 @@
+[gd_scene format=3 uid="uid://d15uv8m7w258m"]
+
+[ext_resource type="Texture2D" uid="uid://cbiby6wrqr8v0" path="res://assets/2-way-L-interection-bottom-and-left.png" id="1_82p1t"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_ekodu"]
+size = Vector2(1452, 188)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_2po3v"]
+size = Vector2(188, 1259)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_a0wcq"]
+size = Vector2(2786.855, 195.82082)
+
+[node name="4WayIntersection" type="Node2D" unique_id=361485044]
+
+[node name="3WayInterectionCutoffTop" type="Sprite2D" parent="." unique_id=1188950562]
+scale = Vector2(63.187, 63.187)
+texture = ExtResource("1_82p1t")
+
+[node name="StaticBody2D" type="StaticBody2D" parent="." unique_id=182069073]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="StaticBody2D" unique_id=362365071]
+position = Vector2(663, 49)
+rotation = 1.5707964
+shape = SubResource("RectangleShape2D_ekodu")
+
+[node name="StaticBody2D2" type="StaticBody2D" parent="." unique_id=1344977652]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="StaticBody2D2" unique_id=483894452]
+position = Vector2(664, 1388.5)
+shape = SubResource("RectangleShape2D_2po3v")
+
+[node name="StaticBody2D3" type="StaticBody2D" parent="." unique_id=1665210271]
+position = Vector2(6.000244, -6.0000153)
+rotation = 1.572506
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="StaticBody2D3" unique_id=105263322]
+position = Vector2(1295, 664)
+shape = SubResource("RectangleShape2D_ekodu")
+
+[node name="StaticBody2D4" type="StaticBody2D" parent="." unique_id=573555173]
+position = Vector2(6.000244, -6.0000153)
+rotation = 1.572506
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="StaticBody2D4" unique_id=2109810903]
+position = Vector2(664, 1388.5)
+shape = SubResource("RectangleShape2D_2po3v")
+
+[node name="StaticBody2D5" type="StaticBody2D" parent="." unique_id=1428927655]
+rotation = 3.1402247
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="StaticBody2D5" unique_id=878841792]
+position = Vector2(624.6507, 665.8595)
+scale = Vector2(1.0000007, 1.0000007)
+shape = SubResource("RectangleShape2D_a0wcq")

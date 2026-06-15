@@ -1,0 +1,33 @@
+[gd_scene format=3 uid="uid://d0cc0by4ckc46"]
+
+[ext_resource type="Texture2D" uid="uid://bvuri057g0kdg" path="res://assets/24x64 road.png" id="1_3pikv"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_46gfs"]
+size = Vector2(187.5, 4023)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_3pikv"]
+size = Vector2(1184.5, 37.5)
+
+[node name="straight_road" type="Node2D" unique_id=500457100]
+
+[node name="Straight_road" type="StaticBody2D" parent="." unique_id=272911086]
+
+[node name="24x64Road" type="Sprite2D" parent="Straight_road" unique_id=326292701]
+scale = Vector2(63.187496, 63.1875)
+texture = ExtResource("1_3pikv")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Straight_road" unique_id=1390661625]
+position = Vector2(662.5, 8.5)
+shape = SubResource("RectangleShape2D_46gfs")
+
+[node name="Straight_road_s" type="StaticBody2D" parent="." unique_id=1226253686]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Straight_road_s" unique_id=1385174419]
+position = Vector2(-663.75, 9)
+shape = SubResource("RectangleShape2D_46gfs")
+
+[node name="Straight_road_s2" type="StaticBody2D" parent="." unique_id=2135027509]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Straight_road_s2" unique_id=583216227]
+position = Vector2(-13.25, 2002.75)
+shape = SubResource("RectangleShape2D_3pikv")
