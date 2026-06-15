@@ -1,0 +1,30 @@
+[gd_scene format=3 uid="uid://ccve7oql5h85a"]
+
+[ext_resource type="Script" uid="uid://br2sccxd38rov" path="res://npc_car.gd" id="1_npc"]
+[ext_resource type="Texture2D" uid="uid://dwsd2lcem0lgn" path="res://assets/npc_car.png" id="2_tex"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_npc"]
+size = Vector2(326, 647)
+
+[node name="NpcCar" type="CharacterBody2D" unique_id=1007278017 groups=["npc"]]
+script = ExtResource("1_npc")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1604748989]
+rotation = 1.5708
+scale = Vector2(14.974253, 15.300558)
+texture = ExtResource("2_tex")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1174679478]
+position = Vector2(25, 6.5)
+shape = SubResource("RectangleShape2D_npc")
+
+[node name="RayFront" type="RayCast2D" parent="." unique_id=1542575493]
+target_position = Vector2(800, 0)
+
+[node name="RayLeft" type="RayCast2D" parent="." unique_id=1565009453]
+position = Vector2(100, -60)
+target_position = Vector2(600, -200)
+
+[node name="RayRight" type="RayCast2D" parent="." unique_id=1957381814]
+position = Vector2(100, 60)
+target_position = Vector2(600, 200)

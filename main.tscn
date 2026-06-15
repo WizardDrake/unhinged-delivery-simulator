@@ -19,5 +19,5 @@ car_scene            = ExtResource("7_car")
 grid_cols = 6
 grid_rows = 6
 road_density = 0.7
-houses_per_side = 5
+houses_per_side = 3
 map_seed = 0

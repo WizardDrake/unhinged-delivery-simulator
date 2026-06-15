@@ -24,8 +24,8 @@ const HOUSE_TEXTURE_PATH := "res://assets/house.png"
 @export var map_seed : int = 0
 
 # ── Geometry (measured from sprites at startup) ───────────────────────────────
-const HOUSE_SCALE    := 5.0   # visual scale for house sprite
-const CURB_OFFSET    := 60.0  # extra gap from road edge → house centre
+const HOUSE_SCALE    := 12.0  # visual scale for house sprite
+const CURB_OFFSET    := 500.0 # extra gap from road edge → house centre
 
 # Filled in by _measure_scenes().
 var _cell_size   : float = 5560.0
@@ -37,10 +37,21 @@ var _inter_size  : float = 1516.0
 var _rng  := RandomNumberGenerator.new()
 var _car  : Node2D   # reference used by minimap
 
+var _houses : Array[Sprite2D] = []
+var _target_houses : Array[Sprite2D] = []
+var _post_office : Sprite2D = null
+var _packages : int = 0
+var _score : int = 0
+var _ui_packages : Label
+var _ui_score : Label
+
 # h_segs[row][col] = true  →  horizontal road running right from node (col, row)
 # v_segs[row][col] = true  →  vertical road running down from node (col, row)
 var _h_segs : Array
 var _v_segs : Array
+
+var npc_car_scene = preload("res://npc_car.tscn")
+var _npcs : Array[Node2D] = []
 
 # ── Minimap ────────────────────────────────────────────────────────────────────
 var _minimap : CanvasLayer
@@ -58,7 +69,78 @@ func _ready() -> void:
 	_place_roads()
 	_place_houses()
 	_car = _spawn_car()
+	_spawn_npcs()
 	_build_minimap()
+	_update_ui()
+
+
+func _process(_delta: float) -> void:
+	if _car == null:
+		return
+	
+	var car_pos := _car.global_position
+	var speed : float = 0.0
+	if "velocity" in _car:
+		speed = _car.velocity.length()
+	
+	# Check Post Office
+	if _post_office != null and _packages == 0 and speed < 400.0:
+		if car_pos.distance_to(_post_office.global_position) < 2000.0:
+			_packages = 5
+			_assign_random_deliveries()
+			_update_ui()
+	
+	# Check Houses
+	if _packages > 0 and speed < 400.0:
+		for i in range(_target_houses.size() - 1, -1, -1):
+			var h := _target_houses[i]
+			if car_pos.distance_to(h.global_position) < 2000.0:
+				_packages -= 1
+				_score += 1
+				h.modulate = Color.WHITE # Delivered (reset color)
+				_target_houses.remove_at(i)
+				_update_ui()
+				break
+
+
+func _assign_random_deliveries() -> void:
+	for h in _target_houses:
+		h.modulate = Color.WHITE
+	_target_houses.clear()
+	
+	var available := _houses.duplicate()
+	available.shuffle()
+	
+	for h in available:
+		if _target_houses.size() >= 5:
+			break
+		
+		var ok := true
+		for t in _target_houses:
+			if h.global_position.distance_to(t.global_position) < 2500.0:
+				ok = false
+				break
+				
+		if ok:
+			_target_houses.append(h)
+			h.modulate = Color(0.2, 1.0, 0.2)
+			
+	for h in available:
+		if _target_houses.size() >= 5:
+			break
+		if not h in _target_houses:
+			_target_houses.append(h)
+			h.modulate = Color(0.2, 1.0, 0.2)
+
+
+func _update_ui() -> void:
+	if _ui_packages != null:
+		if _packages == 0:
+			_ui_packages.text = "Packages: 0 (Go to Blue Post Office!)"
+		else:
+			_ui_packages.text = "Packages: " + str(_packages)
+	if _ui_score != null:
+		_ui_score.text = "Score: " + str(_score)
 
 
 func _input(event: InputEvent) -> void:
@@ -228,7 +310,7 @@ func _place_houses() -> void:
 		return
 
 	var from_road  := _road_width * 0.5 + CURB_OFFSET
-	var end_margin := _inter_size * 0.3
+	var end_margin := _inter_size * 0.2
 
 	# ── Horizontal segments → houses on south and north sides ─────────────────
 	for r in range(grid_rows + 1):
@@ -252,6 +334,17 @@ func _place_houses() -> void:
 			_place_curb_houses_v(tex, road_x + from_road, y0, y1,  PI * 0.5)  # east side
 			_place_curb_houses_v(tex, road_x - from_road, y0, y1, -PI * 0.5)  # west side
 
+	if _post_office == null and _houses.size() > 0:
+		var po_idx = _rng.randi_range(0, _houses.size() - 1)
+		_post_office = _houses[po_idx]
+		_houses.remove_at(po_idx)
+		
+		var po_tex = load("res://assets/post_office.png")
+		if po_tex != null:
+			_post_office.texture = po_tex
+		_post_office.modulate = Color.WHITE
+		_post_office.scale = Vector2(HOUSE_SCALE, HOUSE_SCALE)
+
 
 ## Place `houses_per_side` houses evenly spaced along a horizontal curb strip.
 ## `facing_angle` is the sprite rotation so the house faces the road.
@@ -260,8 +353,7 @@ func _place_curb_houses(tex: Texture2D, x0: float, x1: float, y: float, facing_a
 		return
 	for i in range(houses_per_side):
 		var t := (i + 0.5) / float(houses_per_side)
-		var jitter := _rng.randf_range(-0.08, 0.08)
-		var x : float = lerp(x0, x1, clampf(t + jitter, 0.0, 1.0))
+		var x : float = lerp(x0, x1, t)
 		_spawn_house(tex, Vector2(x, y), facing_angle)
 
 
@@ -271,8 +363,7 @@ func _place_curb_houses_v(tex: Texture2D, x: float, y0: float, y1: float, facing
 		return
 	for i in range(houses_per_side):
 		var t := (i + 0.5) / float(houses_per_side)
-		var jitter := _rng.randf_range(-0.08, 0.08)
-		var y : float = lerp(y0, y1, clampf(t + jitter, 0.0, 1.0))
+		var y : float = lerp(y0, y1, t)
 		_spawn_house(tex, Vector2(x, y), facing_angle)
 
 
@@ -283,6 +374,8 @@ func _spawn_house(tex: Texture2D, pos: Vector2, angle: float) -> void:
 	sprite.rotation = angle
 	sprite.position = pos
 	add_child(sprite)
+
+	_houses.append(sprite)
 
 
 func _cell_is_enclosed(r: int, c: int) -> bool:
@@ -296,10 +389,39 @@ func _spawn_car() -> Node2D:
 	if car_scene == null:
 		return null
 	var car := car_scene.instantiate() as Node2D
-	car.position = _world_pos(0, 0)
+	car.name = "Car"
+	
+	# Random spawn point
+	var c = _rng.randi_range(0, grid_cols - 1)
+	var r = _rng.randi_range(0, grid_rows - 1)
+	car.position = _world_pos(c, r)
 	car.rotation  = 0.0
+	
+	# Random color
+	var sprite = car.get_node_or_null("Sprite2D")
+	if sprite != null:
+		sprite.modulate = Color(_rng.randf_range(0.2, 1.0), _rng.randf_range(0.2, 1.0), _rng.randf_range(0.2, 1.0))
+		
 	add_child(car)
 	return car
+
+func _spawn_npcs() -> void:
+	if npc_car_scene == null: return
+	for i in range(25):
+		var npc = npc_car_scene.instantiate() as Node2D
+		add_child(npc)
+		var c = _rng.randi_range(0, grid_cols - 1)
+		var r = _rng.randi_range(0, grid_rows)
+		if _h_segs[r][c]:
+			npc.init_path(c, r, c + 1, r, self)
+		else:
+			c = _rng.randi_range(0, grid_cols)
+			r = _rng.randi_range(0, grid_rows - 1)
+			if _v_segs[r][c]:
+				npc.init_path(c, r, c, r + 1, self)
+			else:
+				npc.init_path(0, 0, 1, 0, self)
+		_npcs.append(npc)
 
 
 # ── Grass background ──────────────────────────────────────────────────────────
@@ -382,6 +504,24 @@ func _build_minimap() -> void:
 	hint.offset_bottom = 0.0
 	hint_layer.add_child(hint)
 
+	_ui_packages = Label.new()
+	_ui_packages.text = ""
+	_ui_packages.add_theme_font_size_override("font_size", 48)
+	_ui_packages.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
+	_ui_packages.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0))
+	_ui_packages.add_theme_constant_override("outline_size", 8)
+	_ui_packages.position = Vector2(24, 24)
+	hint_layer.add_child(_ui_packages)
+
+	_ui_score = Label.new()
+	_ui_score.text = ""
+	_ui_score.add_theme_font_size_override("font_size", 48)
+	_ui_score.add_theme_color_override("font_color", Color(1.0, 0.8, 0.0))
+	_ui_score.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0))
+	_ui_score.add_theme_constant_override("outline_size", 8)
+	_ui_score.position = Vector2(24, 88)
+	hint_layer.add_child(_ui_score)
+
 
 # ── Minimap draw node (inner class) ──────────────────────────────────────────
 
@@ -439,6 +579,30 @@ class _MinimapDraw extends Control:
 				var p0  := origin + Vector2(wx * scale_v.x, wy0 * scale_v.y)
 				var p1  := origin + Vector2(wx * scale_v.x, wy1 * scale_v.y)
 				draw_line(p0, p1, road_color, road_px_w)
+
+		# ── Points of Interest ───────────────────────────────────────────────
+		for h in m._houses:
+			var cw : Vector2 = h.position + half_world
+			var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
+			draw_rect(Rect2(cp - Vector2(2, 2), Vector2(4, 4)), Color(0.6, 0.6, 0.6, 0.5))
+
+		for h in m._target_houses:
+			var cw : Vector2 = h.position + half_world
+			var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
+			draw_rect(Rect2(cp - Vector2(3, 3), Vector2(6, 6)), Color(0.2, 1.0, 0.2, 1.0))
+
+		if m._post_office != null:
+			var cw : Vector2 = m._post_office.position + half_world
+			var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
+			draw_rect(Rect2(cp - Vector2(5, 5), Vector2(10, 10)), Color(0.2, 0.4, 1.0, 1.0))
+			draw_rect(Rect2(cp - Vector2(5, 5), Vector2(10, 10)), Color(1, 1, 1, 1), false, 1.0)
+
+		# ── NPCs ─────────────────────────────────────────────────────────────
+		for npc in m._npcs:
+			if npc == null or npc.is_destroyed: continue
+			var cw : Vector2 = npc.position + half_world
+			var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
+			draw_circle(cp, 4.0, Color(1.0, 0.8, 0.1))
 
 		# ── Car dot ──────────────────────────────────────────────────────────
 		if m._car != null:
