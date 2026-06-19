@@ -113,7 +113,7 @@ func _make_button(label: String, font: Font) -> Button:
 
 
 func _on_local_multiplayer() -> void:
-	get_tree().change_scene_to_file("res://main.tscn")
+	get_tree().change_scene_to_file("res://settings_menu.tscn")
 
 
 func _on_exit() -> void:

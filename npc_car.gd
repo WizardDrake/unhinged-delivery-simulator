@@ -66,6 +66,7 @@ var _reverse_timer     := 0.0
 var _reverse_steer     := 0.0
 var _reverse_count     := 0
 var _last_progress_pos := Vector2.ZERO
+var _wreck_timer       := 0.0
 
 # ── Knockback state ──────────────────────────────────────────────────────────
 var _knock_timer    := 0.0
@@ -372,9 +373,13 @@ func _begin_reverse() -> void:
 		_reverse_count = 0
 		return
 
-	_state         = State.REVERSING
-	_reverse_timer = REVERSE_DURATION
-	_reverse_steer = randf_range(-3.0, 3.0)
+	# Turn around by reversing the path!
+	_waypoints.reverse()
+	_wp_index = _waypoints.size() - 1 - _wp_index
+	_step_waypoint()
+	rotation += PI
+	_stuck_timer = 0.0
+	_state = State.CRUISING
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -437,6 +442,10 @@ func _tick_wrecked(delta: float) -> void:
 		velocity = velocity.normalized() * maxf(0.0, spd - wreck_drag * delta)
 	else:
 		velocity = Vector2.ZERO
+
+	_wreck_timer += delta
+	if _wreck_timer > 5.0:
+		queue_free()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

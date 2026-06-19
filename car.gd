@@ -18,6 +18,9 @@ var steer_direction
 ## Set by main.gd before the first physics frame.
 var player_id : int = 1
 
+## When true, the car ignores all input and doesn't move.
+var frozen : bool = true
+
 # Input action names resolved from player_id
 var _action_left  : String
 var _action_right : String
@@ -31,8 +34,17 @@ func _ready() -> void:
 	_action_accel = "p%d_accelerate"  % player_id
 	_action_brake = "p%d_brake"       % player_id
 
+	# Apply settings from the global singleton
+	engine_power   = GameSettings.engine_power
+	braking        = -GameSettings.braking_power
+	steering_angle = GameSettings.steering_angle
+
 
 func _physics_process(delta):
+	if frozen:
+		velocity = Vector2.ZERO
+		return
+
 	acceleration = Vector2.ZERO
 	get_input()
 	apply_friction(delta)

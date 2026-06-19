@@ -77,6 +77,14 @@ var _traffic_paths : Array = []
 var _viewports : Array[SubViewport] = []
 var _viewport_containers : Array[SubViewportContainer] = []
 
+# ── Game Time & State ────────────────────────────────────────────────────────
+var _game_state : String = "countdown" # "countdown", "playing", "finished"
+var _countdown_timer : float = 3.0
+var _round_timer : float = 0.0
+var _ui_round_timers : Array[Label] = []
+var _ui_center_labels : Array[Label] = []
+var _global_results_screen : Control
+
 # ── Per-player minimaps ───────────────────────────────────────────────────────
 var _minimaps : Array[Control] = []  # one per player, inside their SubViewport
 
@@ -105,6 +113,12 @@ func _ready() -> void:
 	_update_ui(0)
 	_update_ui(1)
 	_box_tex = load(BOX_TEXTURE_PATH)
+
+	_round_timer = GameSettings.round_time
+	# Freeze cars during countdown
+	for car in _cars:
+		if car != null:
+			car.frozen = true
 
 
 # ── Split-screen setup ───────────────────────────────────────────────────────
@@ -160,6 +174,13 @@ func _setup_split_screen() -> void:
 	# Build per-player HUD overlays
 	for p in range(2):
 		_build_player_hud(p)
+
+	# ── Global results screen overlay ─────────────────────────────────────────
+	_global_results_screen = ColorRect.new()
+	_global_results_screen.color = Color(0, 0, 0, 0.8)
+	_global_results_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_global_results_screen.visible = false
+	ui_layer.add_child(_global_results_screen)
 
 
 func _build_player_hud(player_idx: int) -> void:
@@ -231,10 +252,27 @@ func _build_player_hud(player_idx: int) -> void:
 	top_hbox.add_child(score_label)
 	_ui_scores.append(score_label)
 
+	# Spacer
+	var spacer1 := Control.new()
+	spacer1.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top_hbox.add_child(spacer1)
+
+	# Round timer
+	var time_label := Label.new()
+	time_label.text = "0:00"
+	if font != null:
+		time_label.add_theme_font_override("font", font)
+	time_label.add_theme_font_size_override("font_size", 28)
+	time_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
+	time_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	time_label.add_theme_constant_override("outline_size", 4)
+	top_hbox.add_child(time_label)
+	_ui_round_timers.append(time_label)
+
 	# Spacer to push minimap hint to the right
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top_hbox.add_child(spacer)
+	var spacer2 := Control.new()
+	spacer2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top_hbox.add_child(spacer2)
 
 	# Minimap key hint
 	var mm_hint := Label.new()
@@ -245,12 +283,45 @@ func _build_player_hud(player_idx: int) -> void:
 	mm_hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.4))
 	top_hbox.add_child(mm_hint)
 
+	# ── Center screen messages (countdown) ──────────────────────────────────
+	var center_lbl := Label.new()
+	center_lbl.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	if font != null:
+		center_lbl.add_theme_font_override("font", font)
+	center_lbl.add_theme_font_size_override("font_size", 120)
+	center_lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.2))
+	center_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	center_lbl.add_theme_constant_override("outline_size", 8)
+	hud.add_child(center_lbl)
+	_ui_center_labels.append(center_lbl)
+
+	# ── Target Indicators ────────────────────────────────────────────────────
+	var indicator_script := load("res://target_indicators.gd") as Script
+	if indicator_script != null:
+		var indicator := Control.new()
+		indicator.set_script(indicator_script)
+		indicator.player_idx = player_idx
+		indicator.main_ref = self
+		indicator.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		hud.add_child(indicator)
+		hud.move_child(indicator, 0)
+
 
 func _process(delta: float) -> void:
+	_process_game_state(delta)
+
 	# Update cameras to follow cars
 	for p in range(2):
 		if p < _cars.size() and _cars[p] != null and p < _cameras.size():
 			_cameras[p].global_position = _cars[p].global_position
+
+	if _game_state != "playing":
+		return
+
+	# Respawn NPCs if any despawned
+	_npcs = _npcs.filter(func(n): return is_instance_valid(n) and not n.is_queued_for_deletion())
+	if _npcs.size() < 25:
+		_spawn_one_npc()
 
 	# Per-player game logic
 	for p in range(2):
@@ -291,6 +362,110 @@ func _process(delta: float) -> void:
 
 	# Animate thrown boxes
 	_update_thrown_boxes(delta)
+
+
+func _process_game_state(delta: float) -> void:
+	if _game_state == "countdown":
+		var old_sec := int(ceil(_countdown_timer))
+		_countdown_timer -= delta
+		var new_sec := int(ceil(_countdown_timer))
+
+		if _countdown_timer <= 0.0:
+			_game_state = "playing"
+			for lbl in _ui_center_labels:
+				lbl.text = "GO!"
+				lbl.add_theme_color_override("font_color", Color(0.2, 1.0, 0.3))
+			for car in _cars:
+				if car != null:
+					car.frozen = false
+
+			# Fade out "GO!" after 1 second
+			var tw := create_tween()
+			for lbl in _ui_center_labels:
+				tw.tween_property(lbl, "modulate:a", 0.0, 1.0)
+		else:
+			for lbl in _ui_center_labels:
+				lbl.text = str(new_sec)
+
+	elif _game_state == "playing":
+		_round_timer -= delta
+		if _round_timer <= 0.0:
+			_round_timer = 0.0
+			_end_game()
+
+		# Update UI timers
+		var m := int(_round_timer) / 60
+		var s := int(_round_timer) % 60
+		var time_str := "%d:%02d" % [m, s]
+		for lbl in _ui_round_timers:
+			lbl.text = time_str
+			if _round_timer <= 10.0:
+				lbl.add_theme_color_override("font_color", Color(1.0, 0.2, 0.2))
+
+
+func _end_game() -> void:
+	_game_state = "finished"
+	for car in _cars:
+		if car != null:
+			car.frozen = true
+
+	# Determine winner
+	var s1 = _player_scores[0]
+	var s2 = _player_scores[1]
+	var diff = abs(s1 - s2)
+	var win_text := ""
+	var win_color := Color.WHITE
+
+	if s1 > s2:
+		win_text = "PLAYER 1 WINS!\nby %d points" % diff
+		win_color = P1_COLOR
+	elif s2 > s1:
+		win_text = "PLAYER 2 WINS!\nby %d points" % diff
+		win_color = P2_COLOR
+	else:
+		win_text = "IT'S A TIE!"
+		win_color = Color(1, 0.9, 0.5)
+
+	# Show global results screen
+	_global_results_screen.visible = true
+
+	var vbox := VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 30)
+	_global_results_screen.add_child(vbox)
+
+	var lbl := Label.new()
+	lbl.text = "TIME'S UP!"
+	var font = load("res://assets/Poppins-Medium.ttf") as Font
+	if font != null:
+		lbl.add_theme_font_override("font", font)
+	lbl.add_theme_font_size_override("font_size", 80)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(lbl)
+
+	var win_lbl := Label.new()
+	win_lbl.text = win_text
+	if font != null:
+		win_lbl.add_theme_font_override("font", font)
+	win_lbl.add_theme_font_size_override("font_size", 56)
+	win_lbl.add_theme_color_override("font_color", win_color)
+	win_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(win_lbl)
+
+	var btn := Button.new()
+	btn.text = "MAIN MENU"
+	btn.custom_minimum_size = Vector2(300, 60)
+	if font != null:
+		btn.add_theme_font_override("font", font)
+	btn.add_theme_font_size_override("font_size", 28)
+	btn.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://main_menu.tscn"))
+	vbox.add_child(btn)
+
+	# Make sure mouse is visible again since we need to click
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
 
 
 func _assign_random_deliveries(player_idx: int) -> void:
@@ -660,8 +835,8 @@ func _place_houses() -> void:
 			var road_x : float = _world_pos(float(c), 0.0).x
 			var y0 : float = _world_pos(float(c), float(r)).y     + _inter_size * 0.5 + end_margin
 			var y1 : float = _world_pos(float(c), float(r + 1)).y - _inter_size * 0.5 - end_margin
-			_place_curb_houses_v(tex, road_x + from_road, y0, y1,  PI * 0.5)  # east side
-			_place_curb_houses_v(tex, road_x - from_road, y0, y1, -PI * 0.5)  # west side
+			_place_curb_houses_v(tex, road_x + from_road, y0, y1, -PI * 0.5)  # east side
+			_place_curb_houses_v(tex, road_x - from_road, y0, y1,  PI * 0.5)  # west side
 
 	if _post_office == null and _houses.size() > 0:
 		var po_idx = _rng.randi_range(0, _houses.size() - 1)
@@ -733,17 +908,25 @@ func _spawn_car_for_player(player_id: int) -> Node2D:
 	# Set the player_id so the car reads the right input actions
 	car.player_id = player_id
 
-	# Spawn at different locations for each player
-	var c : int
-	var r : int
-	if player_id == 1:
-		c = _rng.randi_range(0, grid_cols / 2)
-		r = _rng.randi_range(0, grid_rows / 2)
+	# Spawn equally close to the post office, parked on the road in front of it
+	if _post_office != null:
+		var po_pos := _post_office.global_position
+		# The house's local -Y axis points toward the road (distance is ~1258 units)
+		var house_fwd := Vector2.UP.rotated(_post_office.rotation)
+		var road_center := po_pos + house_fwd * 1258.0
+		
+		# Offset cars sideways along the road
+		var right_dir := house_fwd.rotated(PI / 2.0)
+		if player_id == 1:
+			car.position = road_center - right_dir * 500.0
+		else:
+			car.position = road_center + right_dir * 500.0
+		
+		# Face the cars along the road
+		car.rotation = _post_office.rotation + PI / 2.0
 	else:
-		c = _rng.randi_range(grid_cols / 2, grid_cols - 1)
-		r = _rng.randi_range(grid_rows / 2, grid_rows - 1)
-	car.position = _world_pos(c, r)
-	car.rotation = 0.0
+		car.position = Vector2.ZERO
+		car.rotation = 0.0
 
 	# Player-specific color tinting
 	var sprite = car.get_node_or_null("Sprite2D")
@@ -785,6 +968,23 @@ func _spawn_npcs() -> void:
 		if seg.length_squared() > 0.01:
 			npc.position += seg * _rng.randf_range(300.0, 1200.0)
 		_npcs.append(npc)
+
+
+func _spawn_one_npc() -> void:
+	if npc_car_scene == null or _traffic_paths.is_empty():
+		return
+	var npc = npc_car_scene.instantiate() as Node2D
+	add_child(npc)
+	var path_idx := _rng.randi_range(0, _traffic_paths.size() - 1)
+	var path: Array = _traffic_paths[path_idx]
+	var start_idx := _rng.randi_range(0, path.size() - 1)
+	npc.init_route(path, start_idx, self)
+	
+	var next_idx := (start_idx + 1) % path.size()
+	var dir: Vector2 = (path[next_idx] - path[start_idx]).normalized()
+	if dir.length_squared() > 0.01:
+		npc.rotation = dir.angle() + PI * 0.5
+	_npcs.append(npc)
 
 
 # ── Grass background ──────────────────────────────────────────────────────────
@@ -942,13 +1142,6 @@ class _MinimapDraw extends Control:
 			var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
 			draw_rect(Rect2(cp - Vector2(5, 5), Vector2(10, 10)), Color(0.2, 0.4, 1.0, 1.0))
 			draw_rect(Rect2(cp - Vector2(5, 5), Vector2(10, 10)), Color(1, 1, 1, 1), false, 1.0)
-
-		# ── NPCs ─────────────────────────────────────────────────────────────
-		for npc in m._npcs:
-			if npc == null or npc.is_destroyed: continue
-			var cw : Vector2 = npc.position + half_world
-			var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
-			draw_circle(cp, 3.0, Color(1.0, 0.8, 0.1, 0.6))
 
 		# ── Car dots (both players) ──────────────────────────────────────────
 		for p in range(m._cars.size()):
