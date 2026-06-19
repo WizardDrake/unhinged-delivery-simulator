@@ -14,6 +14,24 @@ var traction_slow = 5
 var acceleration = Vector2.ZERO
 var steer_direction
 
+## Which player controls this car: 1 or 2.
+## Set by main.gd before the first physics frame.
+var player_id : int = 1
+
+# Input action names resolved from player_id
+var _action_left  : String
+var _action_right : String
+var _action_accel : String
+var _action_brake : String
+
+
+func _ready() -> void:
+	_action_left  = "p%d_steer_left"  % player_id
+	_action_right = "p%d_steer_right" % player_id
+	_action_accel = "p%d_accelerate"  % player_id
+	_action_brake = "p%d_brake"       % player_id
+
+
 func _physics_process(delta):
 	acceleration = Vector2.ZERO
 	get_input()
@@ -29,6 +47,7 @@ func _push_npc_hits() -> void:
 		var body := get_slide_collision(i).get_collider()
 		if body != null and body.is_in_group("npc") and body.has_method("receive_player_hit"):
 			body.receive_player_hit(self, get_slide_collision(i))
+
 func apply_friction(delta):
 	if acceleration == Vector2.ZERO and velocity.length() < 50:
 		velocity = Vector2.ZERO
@@ -37,11 +56,11 @@ func apply_friction(delta):
 	acceleration += drag_force + friction_force
 	
 func get_input():
-	var turn = Input.get_axis("steer_left", "steer_right")
+	var turn = Input.get_axis(_action_left, _action_right)
 	steer_direction = turn * deg_to_rad(steering_angle)
-	if Input.is_action_pressed("accelerate"):
+	if Input.is_action_pressed(_action_accel):
 		acceleration = transform.x * engine_power
-	if Input.is_action_pressed("brake"):
+	if Input.is_action_pressed(_action_brake):
 		acceleration = transform.x * braking
 	
 func calculate_steering(delta):

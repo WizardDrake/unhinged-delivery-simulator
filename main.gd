@@ -11,6 +11,7 @@ const RoadPathGeneratorScript := preload("res://road_path_generator.gd")
 @export var car_scene           : PackedScene
 
 const HOUSE_TEXTURE_PATH := "res://assets/house.png"
+const BOX_TEXTURE_PATH   := "res://assets/box.png"
 
 # ── Grid config ────────────────────────────────────────────────────────────────
 @export var grid_cols : int = 6
@@ -37,15 +38,31 @@ var _inter_size  : float = 1516.0
 
 # ── Internal state ─────────────────────────────────────────────────────────────
 var _rng  := RandomNumberGenerator.new()
-var _car  : Node2D   # reference used by minimap
 
 var _houses : Array[Sprite2D] = []
-var _target_houses : Array[Sprite2D] = []
 var _post_office : Sprite2D = null
-var _packages : int = 0
-var _score : int = 0
-var _ui_packages : Label
-var _ui_score : Label
+
+# Per-player state (index 0 = P1, index 1 = P2)
+var _cars : Array[Node2D] = []
+var _cameras : Array[Camera2D] = []
+var _player_packages : Array[int] = [0, 0]
+var _player_scores   : Array[int] = [0, 0]
+var _player_targets  : Array = [[], []]  # Array of Array[Sprite2D]
+var _ui_packages : Array[Label] = []
+var _ui_scores   : Array[Label] = []
+
+# Legacy single-car reference for minimap compat
+var _car : Node2D
+
+# Thrown-box state
+var _box_tex : Texture2D
+var _thrown_boxes : Array = []  # Array of Dictionaries tracking each thrown box
+const BOX_SCALE       := 6.0
+const BOX_SPEED       := 3500.0
+const BOX_HIT_DIST    := 300.0    # distance to house to count as collision
+const BOX_BOUNCE_DIST := 220.0    # how far the box bounces back
+const BOX_BOUNCE_TIME := 0.25     # seconds for the bounce animation
+const BOX_LINGER_TIME := 0.5      # seconds box stays after bounce before vanishing
 
 # h_segs[row][col] = true  →  horizontal road running right from node (col, row)
 # v_segs[row][col] = true  →  vertical road running down from node (col, row)
@@ -56,8 +73,16 @@ var npc_car_scene = preload("res://npc_car.tscn")
 var _npcs : Array[Node2D] = []
 var _traffic_paths : Array = []
 
-# ── Minimap ────────────────────────────────────────────────────────────────────
-var _minimap : CanvasLayer
+# ── Split-screen viewports ────────────────────────────────────────────────────
+var _viewports : Array[SubViewport] = []
+var _viewport_containers : Array[SubViewportContainer] = []
+
+# ── Per-player minimaps ───────────────────────────────────────────────────────
+var _minimaps : Array[Control] = []  # one per player, inside their SubViewport
+
+# Player colors for identification
+const P1_COLOR := Color(0.3, 0.6, 1.0)   # blue
+const P2_COLOR := Color(1.0, 0.35, 0.3)  # red
 
 
 func _ready() -> void:
@@ -67,89 +92,355 @@ func _ready() -> void:
 		_rng.seed = map_seed
 
 	_measure_scenes()
+	_setup_split_screen()
 	_spawn_grass_bg()       # must be first child so it draws behind everything
 	_init_segment_arrays()
+	_prune_dead_ends()
 	_traffic_paths = RoadPathGeneratorScript.generate_paths(self, _rng, 14)
 	_place_roads()
 	_place_houses()
-	_car = _spawn_car()
+	_spawn_both_cars()
 	_spawn_npcs()
 	_build_minimap()
-	_update_ui()
+	_update_ui(0)
+	_update_ui(1)
+	_box_tex = load(BOX_TEXTURE_PATH)
 
 
-func _process(_delta: float) -> void:
-	if _car == null:
-		return
-	
-	var car_pos := _car.global_position
-	var speed : float = 0.0
-	if "velocity" in _car:
-		speed = _car.velocity.length()
-	
-	# Check Post Office
-	if _post_office != null and _packages == 0 and speed < 400.0:
-		if car_pos.distance_to(_post_office.global_position) < 2000.0:
-			_packages = 5
-			_assign_random_deliveries()
-			_update_ui()
-	
-	# Check Houses
-	if _packages > 0 and speed < 400.0:
-		for i in range(_target_houses.size() - 1, -1, -1):
-			var h := _target_houses[i]
-			if car_pos.distance_to(h.global_position) < 2000.0:
-				_packages -= 1
-				_score += 1
-				h.modulate = Color.WHITE # Delivered (reset color)
-				_target_houses.remove_at(i)
-				_update_ui()
-				break
+# ── Split-screen setup ───────────────────────────────────────────────────────
+
+func _setup_split_screen() -> void:
+	# We'll create an HBoxContainer with two SubViewportContainers
+	# Each SubViewport shares the same World2D (this scene's world)
+
+	var hbox := HBoxContainer.new()
+	hbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hbox.add_theme_constant_override("separation", 4)
+
+	# We need a CanvasLayer to put the split-screen containers on top
+	var ui_layer := CanvasLayer.new()
+	ui_layer.layer = 0
+	add_child(ui_layer)
+	ui_layer.add_child(hbox)
+
+	for p in range(2):
+		var container := SubViewportContainer.new()
+		container.stretch = true
+		container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		container.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		hbox.add_child(container)
+
+		var viewport := SubViewport.new()
+		viewport.handle_input_locally = false
+		viewport.canvas_cull_mask = 0xFFFFFFFF
+		viewport.world_2d = get_viewport().world_2d  # share the same world
+		viewport.transparent_bg = false
+		# Keep pixel-art crisp (nearest-neighbor filtering)
+		viewport.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
+		container.add_child(viewport)
+
+		# Camera for this player
+		var cam := Camera2D.new()
+		cam.zoom = Vector2(0.25, 0.25)
+		cam.name = "P%dCamera" % (p + 1)
+		viewport.add_child(cam)
+		_cameras.append(cam)
+
+		_viewports.append(viewport)
+		_viewport_containers.append(container)
+
+	# Separator line between viewports
+	var sep := ColorRect.new()
+	sep.color = Color(0.2, 0.2, 0.3, 1.0)
+	sep.custom_minimum_size = Vector2(4, 0)
+	sep.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# Insert between the two containers
+	hbox.move_child(sep, 1)
+
+	# Build per-player HUD overlays
+	for p in range(2):
+		_build_player_hud(p)
 
 
-func _assign_random_deliveries() -> void:
-	for h in _target_houses:
-		h.modulate = Color.WHITE
-	_target_houses.clear()
-	
+func _build_player_hud(player_idx: int) -> void:
+	var font = load("res://assets/Poppins-Medium.ttf") as Font
+
+	# Each player gets a CanvasLayer inside their SubViewport so the HUD
+	# stays screen-fixed and doesn't move with the Camera2D.
+	var hud_layer := CanvasLayer.new()
+	hud_layer.layer = 5
+	_viewports[player_idx].add_child(hud_layer)
+
+	var hud := Control.new()
+	hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud_layer.add_child(hud)
+
+	var player_color : Color = P1_COLOR if player_idx == 0 else P2_COLOR
+	var minimap_key := "TAB" if player_idx == 0 else "R-CTRL"
+
+	# ── Top bar background ──────────────────────────────────────────────────
+	var top_bar := ColorRect.new()
+	top_bar.color = Color(0.0, 0.0, 0.0, 0.45)
+	top_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	top_bar.offset_bottom = 52
+	hud.add_child(top_bar)
+
+	# HBox for the top bar content
+	var top_hbox := HBoxContainer.new()
+	top_hbox.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	top_hbox.offset_left = 12
+	top_hbox.offset_right = -12
+	top_hbox.offset_top = 6
+	top_hbox.offset_bottom = 48
+	top_hbox.add_theme_constant_override("separation", 20)
+	hud.add_child(top_hbox)
+
+	# Player tag
+	var p_label := Label.new()
+	p_label.text = "P%d" % (player_idx + 1)
+	if font != null:
+		p_label.add_theme_font_override("font", font)
+	p_label.add_theme_font_size_override("font_size", 28)
+	p_label.add_theme_color_override("font_color", player_color)
+	p_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	p_label.add_theme_constant_override("outline_size", 4)
+	top_hbox.add_child(p_label)
+
+	# Package icon + count
+	var pkg_label := Label.new()
+	pkg_label.text = ""
+	if font != null:
+		pkg_label.add_theme_font_override("font", font)
+	pkg_label.add_theme_font_size_override("font_size", 26)
+	pkg_label.add_theme_color_override("font_color", Color(1, 1, 1))
+	pkg_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	pkg_label.add_theme_constant_override("outline_size", 4)
+	top_hbox.add_child(pkg_label)
+	_ui_packages.append(pkg_label)
+
+	# Score icon + count
+	var score_label := Label.new()
+	score_label.text = ""
+	if font != null:
+		score_label.add_theme_font_override("font", font)
+	score_label.add_theme_font_size_override("font_size", 26)
+	score_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	score_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	score_label.add_theme_constant_override("outline_size", 4)
+	top_hbox.add_child(score_label)
+	_ui_scores.append(score_label)
+
+	# Spacer to push minimap hint to the right
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top_hbox.add_child(spacer)
+
+	# Minimap key hint
+	var mm_hint := Label.new()
+	mm_hint.text = minimap_key + " = Map"
+	if font != null:
+		mm_hint.add_theme_font_override("font", font)
+	mm_hint.add_theme_font_size_override("font_size", 18)
+	mm_hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.4))
+	top_hbox.add_child(mm_hint)
+
+
+func _process(delta: float) -> void:
+	# Update cameras to follow cars
+	for p in range(2):
+		if p < _cars.size() and _cars[p] != null and p < _cameras.size():
+			_cameras[p].global_position = _cars[p].global_position
+
+	# Per-player game logic
+	for p in range(2):
+		if p >= _cars.size() or _cars[p] == null:
+			continue
+
+		var car_pos := _cars[p].global_position
+		var speed : float = 0.0
+		if "velocity" in _cars[p]:
+			speed = _cars[p].velocity.length()
+
+		# Check Post Office (pickup — no box thrown)
+		if _post_office != null and _player_packages[p] == 0 and speed < 400.0:
+			if car_pos.distance_to(_post_office.global_position) < 2000.0:
+				_player_packages[p] = 5
+				_assign_random_deliveries(p)
+				_update_ui(p)
+
+		# Check Houses — throw a box instead of instant delivery
+		if _player_packages[p] > 0 and speed < 400.0:
+			var targets : Array = _player_targets[p]
+			for i in range(targets.size() - 1, -1, -1):
+				var h : Sprite2D = targets[i]
+				if car_pos.distance_to(h.global_position) < 2000.0:
+					# Only throw if we haven't already thrown at this house
+					var already_thrown := false
+					for b in _thrown_boxes:
+						if b["target"] == h:
+							already_thrown = true
+							break
+					if already_thrown:
+						continue
+					_throw_box_at(h, p)
+					_player_packages[p] -= 1
+					targets.remove_at(i)
+					_update_ui(p)
+					break
+
+	# Animate thrown boxes
+	_update_thrown_boxes(delta)
+
+
+func _assign_random_deliveries(player_idx: int) -> void:
+	_player_targets[player_idx].clear()
+
 	var available := _houses.duplicate()
 	available.shuffle()
-	
+
+	# Exclude houses already targeted by the other player
+	var other := 1 - player_idx
+	var other_targets : Array = _player_targets[other]
+
 	for h in available:
-		if _target_houses.size() >= 5:
+		if _player_targets[player_idx].size() >= 5:
 			break
-		
+
+		if h in other_targets:
+			continue
+
 		var ok := true
-		for t in _target_houses:
+		for t in _player_targets[player_idx]:
 			if h.global_position.distance_to(t.global_position) < 2500.0:
 				ok = false
 				break
-				
+
 		if ok:
-			_target_houses.append(h)
-			h.modulate = Color(0.2, 1.0, 0.2)
-			
+			_player_targets[player_idx].append(h)
+
 	for h in available:
-		if _target_houses.size() >= 5:
+		if _player_targets[player_idx].size() >= 5:
 			break
-		if not h in _target_houses:
-			_target_houses.append(h)
-			h.modulate = Color(0.2, 1.0, 0.2)
+		if not h in _player_targets[player_idx] and not h in other_targets:
+			_player_targets[player_idx].append(h)
 
 
-func _update_ui() -> void:
-	if _ui_packages != null:
-		if _packages == 0:
-			_ui_packages.text = "Packages: 0 (Go to Blue Post Office!)"
+# ── Box throwing ──────────────────────────────────────────────────────────────
+
+func _throw_box_at(house: Sprite2D, player_idx: int) -> void:
+	if _box_tex == null:
+		# Fallback: instant delivery if texture missing
+		_player_scores[player_idx] += 1
+		_update_ui(player_idx)
+		return
+
+	var car := _cars[player_idx]
+	var box_sprite := Sprite2D.new()
+	box_sprite.texture = _box_tex
+	box_sprite.scale = Vector2(BOX_SCALE, BOX_SCALE)
+	box_sprite.z_index = 10  # draw above everything
+	box_sprite.position = car.global_position
+	add_child(box_sprite)
+
+	var dir_to_house := (car.global_position.direction_to(house.global_position))
+
+	_thrown_boxes.append({
+		"sprite": box_sprite,
+		"target": house,
+		"direction": dir_to_house,
+		"phase": "flying",     # flying -> bouncing -> lingering -> done
+		"bounce_timer": 0.0,
+		"linger_timer": 0.0,
+		"bounce_start": Vector2.ZERO,
+		"bounce_end": Vector2.ZERO,
+		"player_idx": player_idx,
+	})
+
+
+func _update_thrown_boxes(delta: float) -> void:
+	var to_remove : Array[int] = []
+
+	for i in range(_thrown_boxes.size()):
+		var b : Dictionary = _thrown_boxes[i]
+		var sprite : Sprite2D = b["sprite"]
+		var house  : Sprite2D = b["target"]
+		var pidx   : int      = b["player_idx"]
+
+		if b["phase"] == "flying":
+			# Move toward the house
+			var move_dir : Vector2 = sprite.position.direction_to(house.global_position)
+			sprite.position += move_dir * BOX_SPEED * delta
+			# Spin the box while flying
+			sprite.rotation += 8.0 * delta
+
+			# Check collision
+			if sprite.position.distance_to(house.global_position) < BOX_HIT_DIST:
+				# Hit! Start bounce
+				b["phase"] = "bouncing"
+				b["bounce_timer"] = 0.0
+				b["bounce_start"] = sprite.position
+				# Bounce direction: away from the house
+				var bounce_dir := house.global_position.direction_to(sprite.position)
+				if bounce_dir.length_squared() < 0.01:
+					bounce_dir = Vector2.UP
+				b["bounce_end"] = sprite.position + bounce_dir * BOX_BOUNCE_DIST
+				_player_scores[pidx] += 1
+				_update_ui(pidx)
+
+		elif b["phase"] == "bouncing":
+			b["bounce_timer"] += delta
+			var t := clampf(b["bounce_timer"] / BOX_BOUNCE_TIME, 0.0, 1.0)
+			# Ease-out for a natural bounce feel
+			var eased := 1.0 - (1.0 - t) * (1.0 - t)
+			sprite.position = b["bounce_start"].lerp(b["bounce_end"], eased)
+			# Slow down spin during bounce
+			sprite.rotation += 4.0 * (1.0 - t) * delta
+			# Shrink slightly during bounce
+			var bounce_scale := lerpf(BOX_SCALE, BOX_SCALE * 0.7, eased)
+			sprite.scale = Vector2(bounce_scale, bounce_scale)
+
+			if t >= 1.0:
+				b["phase"] = "lingering"
+				b["linger_timer"] = 0.0
+
+		elif b["phase"] == "lingering":
+			b["linger_timer"] += delta
+			# Fade out
+			var fade := 1.0 - clampf(b["linger_timer"] / BOX_LINGER_TIME, 0.0, 1.0)
+			sprite.modulate.a = fade
+
+			if b["linger_timer"] >= BOX_LINGER_TIME:
+				b["phase"] = "done"
+				sprite.queue_free()
+				to_remove.append(i)
+
+	# Remove finished boxes (iterate in reverse to keep indices valid)
+	for i in range(to_remove.size() - 1, -1, -1):
+		_thrown_boxes.remove_at(to_remove[i])
+
+
+func _update_ui(player_idx: int) -> void:
+	if player_idx < _ui_packages.size() and _ui_packages[player_idx] != null:
+		if _player_packages[player_idx] == 0:
+			_ui_packages[player_idx].text = "Packages: 0 — Go to Post Office!"
 		else:
-			_ui_packages.text = "Packages: " + str(_packages)
-	if _ui_score != null:
-		_ui_score.text = "Score: " + str(_score)
+			_ui_packages[player_idx].text = "Packages: " + str(_player_packages[player_idx])
+	if player_idx < _ui_scores.size() and _ui_scores[player_idx] != null:
+		_ui_scores[player_idx].text = "Score: " + str(_player_scores[player_idx])
 
 
 func _input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_focus_next"):   # Tab key
-		_minimap.visible = not _minimap.visible
+	# P1 minimap toggle: Tab
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.physical_keycode == KEY_TAB:
+			if _minimaps.size() > 0:
+				_minimaps[0].visible = not _minimaps[0].visible
+			get_viewport().set_input_as_handled()
+		elif event.physical_keycode == KEY_CTRL and event.location == KEY_LOCATION_RIGHT:
+			if _minimaps.size() > 1:
+				_minimaps[1].visible = not _minimaps[1].visible
+			get_viewport().set_input_as_handled()
 
 
 # ── Scene measurement ─────────────────────────────────────────────────────────
@@ -213,6 +504,40 @@ func _init_segment_arrays() -> void:
 			else:
 				row_arr.append(_rng.randf() < road_density)
 		_v_segs.append(row_arr)
+
+
+## Count how many road segments connect to the node at grid position (c, r).
+func _node_degree(c: int, r: int) -> int:
+	var deg := 0
+	if r > 0          and _v_segs[r - 1][c]: deg += 1  # north
+	if r < grid_rows  and _v_segs[r][c]:     deg += 1  # south
+	if c < grid_cols  and _h_segs[r][c]:     deg += 1  # east
+	if c > 0          and _h_segs[r][c - 1]: deg += 1  # west
+	return deg
+
+
+## Iteratively remove road segments that lead to dead-end nodes (degree == 1).
+## Keeps pruning until no more dead-ends exist, since removing a segment can
+## create a new dead-end at the other end.
+func _prune_dead_ends() -> void:
+	var changed := true
+	while changed:
+		changed = false
+		# Check every node in the grid
+		for r in range(grid_rows + 1):
+			for c in range(grid_cols + 1):
+				if _node_degree(c, r) != 1:
+					continue
+				# This node is a dead-end — remove its single segment
+				if r > 0          and _v_segs[r - 1][c]:
+					_v_segs[r - 1][c] = false
+				elif r < grid_rows and _v_segs[r][c]:
+					_v_segs[r][c] = false
+				elif c < grid_cols and _h_segs[r][c]:
+					_h_segs[r][c] = false
+				elif c > 0         and _h_segs[r][c - 1]:
+					_h_segs[r][c - 1] = false
+				changed = true
 
 
 # ── Road placement ────────────────────────────────────────────────────────────
@@ -389,25 +714,53 @@ func _cell_is_enclosed(r: int, c: int) -> bool:
 
 # ── Car spawn ─────────────────────────────────────────────────────────────────
 
-func _spawn_car() -> Node2D:
+func _spawn_both_cars() -> void:
+	for p in range(2):
+		var car := _spawn_car_for_player(p + 1)
+		if car != null:
+			_cars.append(car)
+	# Set legacy reference for minimap (P1)
+	if _cars.size() > 0:
+		_car = _cars[0]
+
+
+func _spawn_car_for_player(player_id: int) -> Node2D:
 	if car_scene == null:
 		return null
 	var car := car_scene.instantiate() as Node2D
-	car.name = "Car"
-	
-	# Random spawn point
-	var c = _rng.randi_range(0, grid_cols - 1)
-	var r = _rng.randi_range(0, grid_rows - 1)
+	car.name = "Car_P%d" % player_id
+
+	# Set the player_id so the car reads the right input actions
+	car.player_id = player_id
+
+	# Spawn at different locations for each player
+	var c : int
+	var r : int
+	if player_id == 1:
+		c = _rng.randi_range(0, grid_cols / 2)
+		r = _rng.randi_range(0, grid_rows / 2)
+	else:
+		c = _rng.randi_range(grid_cols / 2, grid_cols - 1)
+		r = _rng.randi_range(grid_rows / 2, grid_rows - 1)
 	car.position = _world_pos(c, r)
-	car.rotation  = 0.0
-	
-	# Random color
+	car.rotation = 0.0
+
+	# Player-specific color tinting
 	var sprite = car.get_node_or_null("Sprite2D")
 	if sprite != null:
-		sprite.modulate = Color(_rng.randf_range(0.2, 1.0), _rng.randf_range(0.2, 1.0), _rng.randf_range(0.2, 1.0))
-		
+		if player_id == 1:
+			sprite.modulate = P1_COLOR
+		else:
+			sprite.modulate = P2_COLOR
+
+	# Remove the Camera2D from the car scene — we use our own SubViewport cameras
+	var car_cam = car.get_node_or_null("Camera2D")
+	if car_cam != null:
+		car_cam.queue_free()
+
 	add_child(car)
 	return car
+
 
 func _spawn_npcs() -> void:
 	if npc_car_scene == null or _traffic_paths.is_empty():
@@ -472,71 +825,50 @@ class _GrassBg extends Node2D:
 # ── Minimap ───────────────────────────────────────────────────────────────────
 
 func _build_minimap() -> void:
-	_minimap = CanvasLayer.new()
-	_minimap.layer = 10
-	_minimap.visible = false
-	add_child(_minimap)
+	# Build a per-player minimap overlay inside each SubViewport
+	for p in range(2):
+		# CanvasLayer so the minimap stays screen-fixed
+		var mm_layer := CanvasLayer.new()
+		mm_layer.layer = 10
+		_viewports[p].add_child(mm_layer)
 
-	# Dark semi-transparent panel behind everything.
-	var bg := ColorRect.new()
-	bg.color = Color(0, 0, 0, 0.55)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_minimap.add_child(bg)
+		# Container that holds the dark overlay + map drawing
+		var mm_root := Control.new()
+		mm_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		mm_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mm_root.visible = false
+		mm_layer.add_child(mm_root)
+		_minimaps.append(mm_root)
 
-	# The actual minimap drawing node.
-	var mm := _MinimapDraw.new()
-	mm.main        = self
-	mm.size        = Vector2(280, 280)
-	mm.anchor_left   = 1.0
-	mm.anchor_right  = 1.0
-	mm.anchor_top    = 0.0
-	mm.anchor_bottom = 0.0
-	mm.offset_left   = -300.0
-	mm.offset_right  = -20.0
-	mm.offset_top    = 20.0
-	mm.offset_bottom = 300.0
-	_minimap.add_child(mm)
+		# Dark semi-transparent overlay (only covers this player's viewport)
+		var bg := ColorRect.new()
+		bg.color = Color(0, 0, 0, 0.55)
+		bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mm_root.add_child(bg)
 
-	# "TAB – minimap" hint always visible (not inside the overlay).
-	var hint_layer := CanvasLayer.new()
-	hint_layer.layer = 9
-	add_child(hint_layer)
-
-	var hint := Label.new()
-	hint.text = "TAB  –  minimap"
-	hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
-	hint.anchor_left   = 0.0
-	hint.anchor_right  = 0.0
-	hint.anchor_top    = 1.0
-	hint.anchor_bottom = 1.0
-	hint.offset_left   = 16.0
-	hint.offset_top    = -32.0
-	hint.offset_bottom = 0.0
-	hint_layer.add_child(hint)
-
-	_ui_packages = Label.new()
-	_ui_packages.text = ""
-	_ui_packages.add_theme_font_size_override("font_size", 48)
-	_ui_packages.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
-	_ui_packages.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0))
-	_ui_packages.add_theme_constant_override("outline_size", 8)
-	_ui_packages.position = Vector2(24, 24)
-	hint_layer.add_child(_ui_packages)
-
-	_ui_score = Label.new()
-	_ui_score.text = ""
-	_ui_score.add_theme_font_size_override("font_size", 48)
-	_ui_score.add_theme_color_override("font_color", Color(1.0, 0.8, 0.0))
-	_ui_score.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0))
-	_ui_score.add_theme_constant_override("outline_size", 8)
-	_ui_score.position = Vector2(24, 88)
-	hint_layer.add_child(_ui_score)
+		# The actual minimap drawing node
+		var mm := _MinimapDraw.new()
+		mm.main       = self
+		mm.player_idx = p
+		mm.size       = Vector2(260, 260)
+		mm.anchor_left   = 0.5
+		mm.anchor_right  = 0.5
+		mm.anchor_top    = 0.5
+		mm.anchor_bottom = 0.5
+		mm.offset_left   = -130.0
+		mm.offset_right  = 130.0
+		mm.offset_top    = -130.0
+		mm.offset_bottom = 130.0
+		mm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mm_root.add_child(mm)
 
 
 # ── Minimap draw node (inner class) ──────────────────────────────────────────
 
 class _MinimapDraw extends Control:
-	var main : Node2D  # reference to the Main node
+	var main : Node2D   # reference to the Main node
+	var player_idx : int = 0  # which player this minimap belongs to
 
 	func _process(_delta: float) -> void:
 		queue_redraw()
@@ -554,13 +886,13 @@ class _MinimapDraw extends Control:
 		var scale_v   := draw_size / world_span
 		var origin    := Vector2(pad, pad)  # top-left of drawing area
 
-		# Helper: world → minimap local pixel
 		# world origin is centred, so shift by half the total world span first.
 		var half_world := world_span / 2.0
 
 		# ── Background panel ─────────────────────────────────────────────────
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.08, 0.08, 0.12, 0.92), true)
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.4, 0.6, 1.0, 0.5), false, 2.0)
+		var border_color : Color = m.P1_COLOR if player_idx == 0 else m.P2_COLOR
+		draw_rect(Rect2(Vector2.ZERO, size), border_color.lerp(Color.WHITE, 0.3) * Color(1,1,1,0.6), false, 2.0)
 
 		# ── Roads ────────────────────────────────────────────────────────────
 		var road_color   := Color(0.55, 0.55, 0.6, 1.0)
@@ -590,17 +922,21 @@ class _MinimapDraw extends Control:
 				var p1  := origin + Vector2(wx * scale_v.x, wy1 * scale_v.y)
 				draw_line(p0, p1, road_color, road_px_w)
 
-		# ── Points of Interest ───────────────────────────────────────────────
+		# ── Houses (grey dots) ────────────────────────────────────────────────
 		for h in m._houses:
 			var cw : Vector2 = h.position + half_world
 			var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
 			draw_rect(Rect2(cp - Vector2(2, 2), Vector2(4, 4)), Color(0.6, 0.6, 0.6, 0.5))
 
-		for h in m._target_houses:
+		# ── Only this player's target houses ─────────────────────────────────
+		var my_color : Color = m.P1_COLOR if player_idx == 0 else m.P2_COLOR
+		var my_targets : Array = m._player_targets[player_idx]
+		for h in my_targets:
 			var cw : Vector2 = h.position + half_world
 			var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
-			draw_rect(Rect2(cp - Vector2(3, 3), Vector2(6, 6)), Color(0.2, 1.0, 0.2, 1.0))
+			draw_rect(Rect2(cp - Vector2(4, 4), Vector2(8, 8)), my_color)
 
+		# ── Post office ──────────────────────────────────────────────────────
 		if m._post_office != null:
 			var cw : Vector2 = m._post_office.position + half_world
 			var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
@@ -612,16 +948,23 @@ class _MinimapDraw extends Control:
 			if npc == null or npc.is_destroyed: continue
 			var cw : Vector2 = npc.position + half_world
 			var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
-			draw_circle(cp, 4.0, Color(1.0, 0.8, 0.1))
+			draw_circle(cp, 3.0, Color(1.0, 0.8, 0.1, 0.6))
 
-		# ── Car dot ──────────────────────────────────────────────────────────
-		if m._car != null:
-			var cw  : Vector2 = m._car.position + half_world
+		# ── Car dots (both players) ──────────────────────────────────────────
+		for p in range(m._cars.size()):
+			var car : Node2D = m._cars[p]
+			if car == null:
+				continue
+			var c_color : Color = m.P1_COLOR if p == 0 else m.P2_COLOR
+			var cw  : Vector2 = car.position + half_world
 			var cp  := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
-			draw_circle(cp, 6.0, Color(1.0, 0.3, 0.2))
-			draw_circle(cp, 6.0, Color(1.0, 1.0, 1.0, 0.7), false, 1.5)
+			var dot_size := 7.0 if p == player_idx else 4.0
+			draw_circle(cp, dot_size, c_color)
+			if p == player_idx:
+				draw_circle(cp, dot_size, Color(1.0, 1.0, 1.0, 0.7), false, 1.5)
 
 		# ── Label ────────────────────────────────────────────────────────────
+		var label_text := "P%d MAP" % (player_idx + 1)
 		draw_string(ThemeDB.fallback_font, Vector2(8, size.y - 8),
-			"MINIMAP", HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
+			label_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
 			Color(0.7, 0.7, 0.9, 0.8))

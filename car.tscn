@@ -24,6 +24,3 @@ region_rect = Rect2(5.214575, 2.099083, 22.633423, 41.349525)
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=673256990]
 rotation = 1.5708
 shape = SubResource("CapsuleShape2D_htcoj")
-
-[node name="Camera2D" type="Camera2D" parent="." unique_id=522608276]
-zoom = Vector2(0.25, 0.25)
