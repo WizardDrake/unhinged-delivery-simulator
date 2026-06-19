@@ -48,7 +48,7 @@ func _ready() -> void:
 	_add_setting_row(grid, "Braking", _create_slider(500, 3000, GameSettings.braking_power, func(v: float) -> void: GameSettings.braking_power = v))
 
 	# Steering angle
-	_add_setting_row(grid, "Steering", _create_slider(10, 40, GameSettings.steering_angle, func(v: float) -> void: GameSettings.steering_angle = v))
+	_add_setting_row(grid, "Steering", _create_slider(10, 90, GameSettings.steering_angle, func(v: float) -> void: GameSettings.steering_angle = v))
 
 	# ── Spacer ───────────────────────────────────────────────────────────────
 	var spacer := Control.new()

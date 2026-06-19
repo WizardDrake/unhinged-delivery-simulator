@@ -27,6 +27,9 @@ var _action_right : String
 var _action_accel : String
 var _action_brake : String
 
+var _drift_l : CPUParticles2D
+var _drift_r : CPUParticles2D
+
 
 func _ready() -> void:
 	_action_left  = "p%d_steer_left"  % player_id
@@ -38,6 +41,14 @@ func _ready() -> void:
 	engine_power   = GameSettings.engine_power
 	braking        = -GameSettings.braking_power
 	steering_angle = GameSettings.steering_angle
+
+	_drift_l = _create_drift_particles()
+	_drift_l.position = Vector2(-160, -45)
+	add_child(_drift_l)
+	
+	_drift_r = _create_drift_particles()
+	_drift_r.position = Vector2(-160, 45)
+	add_child(_drift_r)
 
 
 func _physics_process(delta):
@@ -52,6 +63,50 @@ func _physics_process(delta):
 	velocity += acceleration * delta
 	move_and_slide()
 	_push_npc_hits()
+
+	var slip_cos := transform.x.dot(velocity.normalized()) if velocity.length_squared() > 1.0 else 1.0
+	var slip_angle := rad_to_deg(acos(clampf(slip_cos, -1.0, 1.0)))
+	var is_moving_forward := velocity.dot(transform.x) > 100.0
+	var is_drifting := is_moving_forward and (absf(rad_to_deg(steer_direction)) >= 75.0 or slip_angle >= 25.0) and velocity.length() > 450.0
+	
+	_drift_l.emitting = is_drifting
+	_drift_r.emitting = is_drifting
+
+
+func _create_drift_particles() -> CPUParticles2D:
+	var p := CPUParticles2D.new()
+	p.emitting = false
+	p.amount = 15
+	p.lifetime = 0.5
+	p.local_coords = false
+	p.gravity = Vector2.ZERO
+	p.direction = Vector2(-1, 0)
+	p.show_behind_parent = true
+	p.spread = 20.0
+	p.initial_velocity_min = 20.0
+	p.initial_velocity_max = 60.0
+	
+	var tex := GradientTexture2D.new()
+	tex.width = 32
+	tex.height = 32
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(0.5, 0.0)
+	var tg := Gradient.new()
+	tg.add_point(0.0, Color.WHITE)
+	tg.add_point(1.0, Color(1, 1, 1, 0.0))
+	tex.gradient = tg
+	p.texture = tex
+	
+	p.scale_amount_min = 1.5
+	p.scale_amount_max = 3.0
+	
+	var grad := Gradient.new()
+	grad.add_point(0.0, Color(0.9, 0.9, 0.9, 0.6))
+	grad.add_point(1.0, Color(0.9, 0.9, 0.9, 0.0))
+	p.color_ramp = grad
+	
+	return p
 
 
 func _push_npc_hits() -> void:
