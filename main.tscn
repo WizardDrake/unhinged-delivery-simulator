@@ -8,16 +8,11 @@
 [ext_resource type="PackedScene" uid="uid://cdk0mfdcs56d5" path="res://straight_intersection.tscn" id="6_straight"]
 [ext_resource type="PackedScene" uid="uid://b62yrnpdtxpxm" path="res://car.tscn" id="7_car"]
 
-[node name="Main" type="Node2D"]
+[node name="Main" type="Node2D" unique_id=1504240674]
 script = ExtResource("1_main")
-straight_road_scene  = ExtResource("2_road")
-four_way_scene       = ExtResource("3_4way")
-three_way_scene      = ExtResource("4_3way")
-l_corner_scene       = ExtResource("5_lcorner")
+straight_road_scene = ExtResource("2_road")
+four_way_scene = ExtResource("3_4way")
+three_way_scene = ExtResource("4_3way")
+l_corner_scene = ExtResource("5_lcorner")
 straight_inter_scene = ExtResource("6_straight")
-car_scene            = ExtResource("7_car")
-grid_cols = 6
-grid_rows = 6
-road_density = 0.7
-houses_per_side = 3
-map_seed = 0
+car_scene = ExtResource("7_car")

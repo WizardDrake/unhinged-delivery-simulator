@@ -1,5 +1,7 @@
 extends Node2D
 
+const RoadPathGeneratorScript := preload("res://road_path_generator.gd")
+
 # ── Scenes & textures ──────────────────────────────────────────────────────────
 @export var straight_road_scene : PackedScene
 @export var four_way_scene      : PackedScene  # all 4 roads meet
@@ -52,6 +54,7 @@ var _v_segs : Array
 
 var npc_car_scene = preload("res://npc_car.tscn")
 var _npcs : Array[Node2D] = []
+var _traffic_paths : Array = []
 
 # ── Minimap ────────────────────────────────────────────────────────────────────
 var _minimap : CanvasLayer
@@ -66,6 +69,7 @@ func _ready() -> void:
 	_measure_scenes()
 	_spawn_grass_bg()       # must be first child so it draws behind everything
 	_init_segment_arrays()
+	_traffic_paths = RoadPathGeneratorScript.generate_paths(self, _rng, 14)
 	_place_roads()
 	_place_houses()
 	_car = _spawn_car()
@@ -352,7 +356,7 @@ func _place_curb_houses(tex: Texture2D, x0: float, x1: float, y: float, facing_a
 	if x1 <= x0:
 		return
 	for i in range(houses_per_side):
-		var t := (i + 0.5) / float(houses_per_side)
+		var t : float = (i + 0.5) / float(houses_per_side)
 		var x : float = lerp(x0, x1, t)
 		_spawn_house(tex, Vector2(x, y), facing_angle)
 
@@ -362,7 +366,7 @@ func _place_curb_houses_v(tex: Texture2D, x: float, y0: float, y1: float, facing
 	if y1 <= y0:
 		return
 	for i in range(houses_per_side):
-		var t := (i + 0.5) / float(houses_per_side)
+		var t : float = (i + 0.5) / float(houses_per_side)
 		var y : float = lerp(y0, y1, t)
 		_spawn_house(tex, Vector2(x, y), facing_angle)
 
@@ -406,21 +410,27 @@ func _spawn_car() -> Node2D:
 	return car
 
 func _spawn_npcs() -> void:
-	if npc_car_scene == null: return
+	if npc_car_scene == null or _traffic_paths.is_empty():
+		return
+
+	var per_path: Dictionary = {}
 	for i in range(25):
 		var npc = npc_car_scene.instantiate() as Node2D
 		add_child(npc)
-		var c = _rng.randi_range(0, grid_cols - 1)
-		var r = _rng.randi_range(0, grid_rows)
-		if _h_segs[r][c]:
-			npc.init_path(c, r, c + 1, r, self)
-		else:
-			c = _rng.randi_range(0, grid_cols)
-			r = _rng.randi_range(0, grid_rows - 1)
-			if _v_segs[r][c]:
-				npc.init_path(c, r, c, r + 1, self)
-			else:
-				npc.init_path(0, 0, 1, 0, self)
+		var path_idx := i % _traffic_paths.size()
+		var path: Array = _traffic_paths[path_idx]
+		var slot: int = per_path.get(path_idx, 0)
+		per_path[path_idx] = slot + 1
+
+		var slots_on_path := ceili(25.0 / float(_traffic_paths.size()))
+		var step := maxi(path.size() / slots_on_path, 1)
+		var start_idx := (slot * step) % path.size()
+		npc.init_route(path, start_idx, self)
+
+		var next_idx := (start_idx + 1) % path.size()
+		var seg: Vector2 = (path[next_idx] - path[start_idx]).normalized()
+		if seg.length_squared() > 0.01:
+			npc.position += seg * _rng.randf_range(300.0, 1200.0)
 		_npcs.append(npc)
 
 

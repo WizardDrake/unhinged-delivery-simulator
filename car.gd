@@ -21,7 +21,14 @@ func _physics_process(delta):
 	calculate_steering(delta)
 	velocity += acceleration * delta
 	move_and_slide()
-	
+	_push_npc_hits()
+
+
+func _push_npc_hits() -> void:
+	for i in get_slide_collision_count():
+		var body := get_slide_collision(i).get_collider()
+		if body != null and body.is_in_group("npc") and body.has_method("receive_player_hit"):
+			body.receive_player_hit(self, get_slide_collision(i))
 func apply_friction(delta):
 	if acceleration == Vector2.ZERO and velocity.length() < 50:
 		velocity = Vector2.ZERO
