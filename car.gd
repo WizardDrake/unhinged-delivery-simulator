@@ -12,7 +12,7 @@ var traction_fast = 2.5
 var traction_slow = 5
 
 var acceleration = Vector2.ZERO
-var steer_direction
+var steer_direction = 0.0
 
 ## Which player controls this car: 1 or 2.
 ## Set by main.gd before the first physics frame.
@@ -20,6 +20,16 @@ var player_id : int = 1
 
 ## When true, the car ignores all input and doesn't move.
 var frozen : bool = true
+
+## When false, this car is controlled by a remote player (no local input).
+var is_local : bool = true
+
+## Synced state from remote player (used when is_local == false)
+var _sync_pos      := Vector2.ZERO
+var _sync_rot      := 0.0
+var _sync_vel      := Vector2.ZERO
+var _sync_steer    := 0.0
+var _has_sync_data := false
 
 # Input action names resolved from player_id
 var _action_left  : String
@@ -56,6 +66,22 @@ func _physics_process(delta):
 		velocity = Vector2.ZERO
 		return
 
+	if not is_local:
+		# Remote car — interpolate toward synced state
+		if _has_sync_data:
+			position = position.lerp(_sync_pos, 12.0 * delta)
+			rotation = lerp_angle(rotation, _sync_rot, 12.0 * delta)
+			velocity = _sync_vel
+			steer_direction = _sync_steer
+		# Update drift particles for remote car too
+		var slip_cos2 := transform.x.dot(velocity.normalized()) if velocity.length_squared() > 1.0 else 1.0
+		var slip_angle2 := rad_to_deg(acos(clampf(slip_cos2, -1.0, 1.0)))
+		var fwd2 := velocity.dot(transform.x) > 100.0
+		var drift2 := fwd2 and (absf(rad_to_deg(steer_direction)) >= 75.0 or slip_angle2 >= 25.0) and velocity.length() > 450.0
+		_drift_l.emitting = drift2
+		_drift_r.emitting = drift2
+		return
+
 	acceleration = Vector2.ZERO
 	get_input()
 	apply_friction(delta)
@@ -71,6 +97,15 @@ func _physics_process(delta):
 	
 	_drift_l.emitting = is_drifting
 	_drift_r.emitting = is_drifting
+
+
+## Called by the network sync to update this remote car's state.
+func apply_sync(pos: Vector2, rot: float, vel: Vector2, steer: float) -> void:
+	_sync_pos   = pos
+	_sync_rot   = rot
+	_sync_vel   = vel
+	_sync_steer = steer
+	_has_sync_data = true
 
 
 func _create_drift_particles() -> CPUParticles2D:

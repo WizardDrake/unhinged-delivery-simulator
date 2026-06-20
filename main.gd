@@ -42,12 +42,12 @@ var _rng  := RandomNumberGenerator.new()
 var _houses : Array[Sprite2D] = []
 var _post_office : Sprite2D = null
 
-# Per-player state (index 0 = P1, index 1 = P2)
+# Per-player state
 var _cars : Array[Node2D] = []
 var _cameras : Array[Camera2D] = []
-var _player_packages : Array[int] = [0, 0]
-var _player_scores   : Array[int] = [0, 0]
-var _player_targets  : Array = [[], []]  # Array of Array[Sprite2D]
+var _player_packages : Array[int] = []
+var _player_scores   : Array[int] = []
+var _player_targets  : Array = []  # Array of Array[Sprite2D]
 var _ui_packages : Array[Label] = []
 var _ui_scores   : Array[Label] = []
 
@@ -91,10 +91,31 @@ var _minimaps : Array[Control] = []  # one per player, inside their SubViewport
 # Player colors for identification
 const P1_COLOR := Color(0.3, 0.6, 1.0)   # blue
 const P2_COLOR := Color(1.0, 0.35, 0.3)  # red
+const P3_COLOR := Color(0.3, 0.9, 0.4)   # green
+const P4_COLOR := Color(0.9, 0.8, 0.2)   # yellow
+var _player_colors := [P1_COLOR, P2_COLOR, P3_COLOR, P4_COLOR]
 
+# ── Online multiplayer state ──────────────────────────────────────────────────
+var _local_player_idx  : int = 0   # host is 0, clients are assigned
+var _last_tick : int = 0
 
 func _ready() -> void:
-	if map_seed == 0:
+	_last_tick = Time.get_ticks_msec()
+	
+	# Initialize player arrays
+	for p in range(GameSettings.player_count):
+		_player_packages.append(0)
+		_player_scores.append(0)
+		_player_targets.append([])
+
+	# ── Network mode setup ───────────────────────────────────────────────────
+	if GameSettings.is_online:
+		if GameSettings.is_host:
+			_local_player_idx = 0
+		else:
+			_local_player_idx = GameSettings.peer_to_player_idx.get(multiplayer.get_unique_id(), 1)
+		_rng.seed = GameSettings.network_seed
+	elif map_seed == 0:
 		_rng.randomize()
 	else:
 		_rng.seed = map_seed
@@ -107,11 +128,13 @@ func _ready() -> void:
 	_traffic_paths = RoadPathGeneratorScript.generate_paths(self, _rng, 14)
 	_place_roads()
 	_place_houses()
-	_spawn_both_cars()
+	_spawn_cars()
 	_spawn_npcs()
 	_build_minimap()
-	_update_ui(0)
-	_update_ui(1)
+	
+	for p in range(GameSettings.player_count):
+		_update_ui(p)
+
 	_box_tex = load(BOX_TEXTURE_PATH)
 
 	_round_timer = GameSettings.round_time
@@ -124,56 +147,95 @@ func _ready() -> void:
 # ── Split-screen setup ───────────────────────────────────────────────────────
 
 func _setup_split_screen() -> void:
-	# We'll create an HBoxContainer with two SubViewportContainers
-	# Each SubViewport shares the same World2D (this scene's world)
-
-	var hbox := HBoxContainer.new()
-	hbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	hbox.add_theme_constant_override("separation", 4)
-
-	# We need a CanvasLayer to put the split-screen containers on top
 	var ui_layer := CanvasLayer.new()
 	ui_layer.layer = 0
 	add_child(ui_layer)
-	ui_layer.add_child(hbox)
+	
+	_ui_packages.resize(GameSettings.player_count)
+	_ui_scores.resize(GameSettings.player_count)
+	_ui_round_timers.resize(GameSettings.player_count)
+	_ui_center_labels.resize(GameSettings.player_count)
 
-	for p in range(2):
+	if GameSettings.is_online:
+		# ── Online mode: single fullscreen viewport ─────────────────────────
 		var container := SubViewportContainer.new()
 		container.stretch = true
-		container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		container.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		hbox.add_child(container)
+		container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		ui_layer.add_child(container)
 
 		var viewport := SubViewport.new()
 		viewport.handle_input_locally = false
 		viewport.canvas_cull_mask = 0xFFFFFFFF
-		viewport.world_2d = get_viewport().world_2d  # share the same world
+		viewport.world_2d = get_viewport().world_2d
 		viewport.transparent_bg = false
-		# Keep pixel-art crisp (nearest-neighbor filtering)
 		viewport.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
 		container.add_child(viewport)
 
-		# Camera for this player
 		var cam := Camera2D.new()
 		cam.zoom = Vector2(0.25, 0.25)
-		cam.name = "P%dCamera" % (p + 1)
+		cam.name = "OnlineCamera"
 		viewport.add_child(cam)
-		_cameras.append(cam)
 
-		_viewports.append(viewport)
-		_viewport_containers.append(container)
+		# In online, we only have one viewport/camera for the local player,
+		# but _cameras still needs entries for indexing consistency.
+		_cameras.resize(GameSettings.player_count)
+		_viewports.resize(GameSettings.player_count)
+		_viewport_containers.resize(GameSettings.player_count)
+		
+		for p in range(GameSettings.player_count):
+			if p == _local_player_idx:
+				_cameras[p] = cam
+				_viewports[p] = viewport
+				_viewport_containers[p] = container
+			else:
+				_cameras[p] = null
+				_viewports[p] = null
+				_viewport_containers[p] = null
 
-	# Separator line between viewports
-	var sep := ColorRect.new()
-	sep.color = Color(0.2, 0.2, 0.3, 1.0)
-	sep.custom_minimum_size = Vector2(4, 0)
-	sep.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	# Insert between the two containers
-	hbox.move_child(sep, 1)
+		# Build HUD only for the local player
+		_build_player_hud(_local_player_idx)
+	else:
+		# ── Local mode: split-screen ──────────────────────────────────────────
+		var hbox := HBoxContainer.new()
+		hbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		hbox.add_theme_constant_override("separation", 4)
+		ui_layer.add_child(hbox)
 
-	# Build per-player HUD overlays
-	for p in range(2):
-		_build_player_hud(p)
+		for p in range(GameSettings.player_count):
+			var container2 := SubViewportContainer.new()
+			container2.stretch = true
+			container2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			container2.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			hbox.add_child(container2)
+
+			var viewport2 := SubViewport.new()
+			viewport2.handle_input_locally = false
+			viewport2.canvas_cull_mask = 0xFFFFFFFF
+			viewport2.world_2d = get_viewport().world_2d
+			viewport2.transparent_bg = false
+			viewport2.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
+			container2.add_child(viewport2)
+
+			var cam2 := Camera2D.new()
+			cam2.zoom = Vector2(0.25, 0.25)
+			cam2.name = "P%dCamera" % (p + 1)
+			viewport2.add_child(cam2)
+			_cameras.append(cam2)
+
+			_viewports.append(viewport2)
+			_viewport_containers.append(container2)
+
+			# Separator line between viewports (skip for last)
+			if p < GameSettings.player_count - 1:
+				var sep := ColorRect.new()
+				sep.color = Color(0.2, 0.2, 0.3, 1.0)
+				sep.custom_minimum_size = Vector2(4, 0)
+				sep.size_flags_vertical = Control.SIZE_EXPAND_FILL
+				hbox.add_child(sep)
+
+		# Build per-player HUD overlays
+		for p in range(GameSettings.player_count):
+			_build_player_hud(p)
 
 	# ── Global results screen overlay ─────────────────────────────────────────
 	_global_results_screen = ColorRect.new()
@@ -186,19 +248,25 @@ func _setup_split_screen() -> void:
 func _build_player_hud(player_idx: int) -> void:
 	var font = load("res://assets/Poppins-Medium.ttf") as Font
 
+	var vp : SubViewport = _viewports[player_idx]
+	if vp == null:
+		return
+
 	# Each player gets a CanvasLayer inside their SubViewport so the HUD
 	# stays screen-fixed and doesn't move with the Camera2D.
 	var hud_layer := CanvasLayer.new()
 	hud_layer.layer = 5
-	_viewports[player_idx].add_child(hud_layer)
+	vp.add_child(hud_layer)
 
 	var hud := Control.new()
 	hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud_layer.add_child(hud)
 
-	var player_color : Color = P1_COLOR if player_idx == 0 else P2_COLOR
-	var minimap_key := "TAB" if player_idx == 0 else "R-CTRL"
+	var player_color : Color = _player_colors[player_idx % 4]
+	var minimap_key := "TAB"
+	if not GameSettings.is_online:
+		minimap_key = "TAB" if player_idx == 0 else "R-CTRL"
 
 	# ── Top bar background ──────────────────────────────────────────────────
 	var top_bar := ColorRect.new()
@@ -238,7 +306,7 @@ func _build_player_hud(player_idx: int) -> void:
 	pkg_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	pkg_label.add_theme_constant_override("outline_size", 4)
 	top_hbox.add_child(pkg_label)
-	_ui_packages.append(pkg_label)
+	_ui_packages[player_idx] = pkg_label
 
 	# Score icon + count
 	var score_label := Label.new()
@@ -250,7 +318,7 @@ func _build_player_hud(player_idx: int) -> void:
 	score_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	score_label.add_theme_constant_override("outline_size", 4)
 	top_hbox.add_child(score_label)
-	_ui_scores.append(score_label)
+	_ui_scores[player_idx] = score_label
 
 	# Spacer
 	var spacer1 := Control.new()
@@ -267,7 +335,7 @@ func _build_player_hud(player_idx: int) -> void:
 	time_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	time_label.add_theme_constant_override("outline_size", 4)
 	top_hbox.add_child(time_label)
-	_ui_round_timers.append(time_label)
+	_ui_round_timers[player_idx] = time_label
 
 	# Spacer to push minimap hint to the right
 	var spacer2 := Control.new()
@@ -293,7 +361,7 @@ func _build_player_hud(player_idx: int) -> void:
 	center_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	center_lbl.add_theme_constant_override("outline_size", 8)
 	hud.add_child(center_lbl)
-	_ui_center_labels.append(center_lbl)
+	_ui_center_labels[player_idx] = center_lbl
 
 	# ── Target Indicators ────────────────────────────────────────────────────
 	var indicator_script := load("res://target_indicators.gd") as Script
@@ -311,9 +379,17 @@ func _process(delta: float) -> void:
 	_process_game_state(delta)
 
 	# Update cameras to follow cars
-	for p in range(2):
-		if p < _cars.size() and _cars[p] != null and p < _cameras.size():
+	for p in range(GameSettings.player_count):
+		if p < _cars.size() and _cars[p] != null and p < _cameras.size() and _cameras[p] != null:
 			_cameras[p].global_position = _cars[p].global_position
+
+	# ── Network car sync ────────────────────────────────────────────────────
+	if GameSettings.is_online:
+		var local_car := _cars[_local_player_idx] if _local_player_idx < _cars.size() else null
+		if local_car != null:
+			_rpc_car_sync.rpc(local_car.position.x, local_car.position.y,
+				local_car.rotation, local_car.velocity.x, local_car.velocity.y,
+				local_car.steer_direction)
 
 	if _game_state != "playing":
 		return
@@ -324,7 +400,16 @@ func _process(delta: float) -> void:
 		_spawn_one_npc()
 
 	# Per-player game logic
-	for p in range(2):
+	var players_to_check : Array[int] = []
+	if GameSettings.is_online:
+		# In online mode, only process logic for the local player
+		players_to_check = [_local_player_idx]
+	else:
+		players_to_check = []
+		for p in range(GameSettings.player_count):
+			players_to_check.append(p)
+
+	for p in players_to_check:
 		if p >= _cars.size() or _cars[p] == null:
 			continue
 
@@ -339,6 +424,14 @@ func _process(delta: float) -> void:
 				_player_packages[p] = 5
 				_assign_random_deliveries(p)
 				_update_ui(p)
+				if GameSettings.is_online:
+					# Send package pickup to the other player
+					var target_indices : Array[int] = []
+					for t in _player_targets[p]:
+						var idx := _houses.find(t)
+						if idx >= 0:
+							target_indices.append(idx)
+					_rpc_pickup_packages.rpc(p, target_indices)
 
 		# Check Houses — throw a box instead of instant delivery
 		if _player_packages[p] > 0 and speed < 400.0:
@@ -364,15 +457,20 @@ func _process(delta: float) -> void:
 	_update_thrown_boxes(delta)
 
 
-func _process_game_state(delta: float) -> void:
+func _process_game_state(_delta_unused: float) -> void:
+	var now := Time.get_ticks_msec()
+	var real_delta := (now - _last_tick) / 1000.0
+	_last_tick = now
+
 	if _game_state == "countdown":
 		var old_sec := int(ceil(_countdown_timer))
-		_countdown_timer -= delta
+		_countdown_timer -= real_delta
 		var new_sec := int(ceil(_countdown_timer))
 
 		if _countdown_timer <= 0.0:
 			_game_state = "playing"
 			for lbl in _ui_center_labels:
+				if lbl == null: continue
 				lbl.text = "GO!"
 				lbl.add_theme_color_override("font_color", Color(0.2, 1.0, 0.3))
 			for car in _cars:
@@ -382,13 +480,15 @@ func _process_game_state(delta: float) -> void:
 			# Fade out "GO!" after 1 second
 			var tw := create_tween()
 			for lbl in _ui_center_labels:
+				if lbl == null: continue
 				tw.tween_property(lbl, "modulate:a", 0.0, 1.0)
 		else:
 			for lbl in _ui_center_labels:
+				if lbl == null: continue
 				lbl.text = str(new_sec)
 
 	elif _game_state == "playing":
-		_round_timer -= delta
+		_round_timer -= real_delta
 		if _round_timer <= 0.0:
 			_round_timer = 0.0
 			_end_game()
@@ -398,6 +498,7 @@ func _process_game_state(delta: float) -> void:
 		var s := int(_round_timer) % 60
 		var time_str := "%d:%02d" % [m, s]
 		for lbl in _ui_round_timers:
+			if lbl == null: continue
 			lbl.text = time_str
 			if _round_timer <= 10.0:
 				lbl.add_theme_color_override("font_color", Color(1.0, 0.2, 0.2))
@@ -410,20 +511,23 @@ func _end_game() -> void:
 			car.frozen = true
 
 	# Determine winner
-	var s1 = _player_scores[0]
-	var s2 = _player_scores[1]
-	var diff = abs(s1 - s2)
+	var max_score = -1
+	var winners = []
+	for p in range(GameSettings.player_count):
+		if _player_scores[p] > max_score:
+			max_score = _player_scores[p]
+			winners = [p]
+		elif _player_scores[p] == max_score:
+			winners.append(p)
+
 	var win_text := ""
 	var win_color := Color.WHITE
 
-	if s1 > s2:
-		win_text = "PLAYER 1 WINS!\nby %d points" % diff
-		win_color = P1_COLOR
-	elif s2 > s1:
-		win_text = "PLAYER 2 WINS!\nby %d points" % diff
-		win_color = P2_COLOR
+	if winners.size() == 1:
+		win_text = "PLAYER %d WINS!\nScore: %d" % [winners[0] + 1, max_score]
+		win_color = _player_colors[winners[0] % 4]
 	else:
-		win_text = "IT'S A TIE!"
+		win_text = "IT'S A TIE!\nScore: %d" % max_score
 		win_color = Color(1, 0.9, 0.5)
 
 	# Show global results screen
@@ -459,13 +563,70 @@ func _end_game() -> void:
 	if font != null:
 		btn.add_theme_font_override("font", font)
 	btn.add_theme_font_size_override("font_size", 28)
-	btn.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://main_menu.tscn"))
+	btn.pressed.connect(func() -> void:
+		if GameSettings.is_online:
+			NetworkManager.disconnect_game()
+			GameSettings.reset_network()
+		get_tree().change_scene_to_file("res://main_menu.tscn")
+	)
 	vbox.add_child(btn)
 
 	# Make sure mouse is visible again since we need to click
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
+	# In online mode, sync end game to remote
+	if GameSettings.is_online and GameSettings.is_host:
+		_rpc_end_game.rpc(_player_scores)
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Network RPCs
+# ══════════════════════════════════════════════════════════════════════════════
+
+## Receive car position/rotation/velocity from the remote player.
+@rpc("any_peer", "call_remote", "unreliable")
+func _rpc_car_sync(px: float, py: float, rot: float, vx: float, vy: float, steer: float) -> void:
+	var sender_id = multiplayer.get_remote_sender_id()
+	var p_idx = GameSettings.peer_to_player_idx.get(sender_id, -1)
+	if p_idx >= 0 and p_idx < _cars.size() and _cars[p_idx] != null:
+		_cars[p_idx].apply_sync(Vector2(px, py), rot, Vector2(vx, vy), steer)
+
+
+## Remote player picked up packages — sync their targets to our UI.
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_pickup_packages(player_idx: int, house_indices: Array) -> void:
+	if player_idx >= 0 and player_idx < GameSettings.player_count:
+		_player_packages[player_idx] = 5
+		_player_targets[player_idx].clear()
+		for idx in house_indices:
+			if idx >= 0 and idx < _houses.size():
+				_player_targets[player_idx].append(_houses[idx])
+		_update_ui(player_idx)
+
+
+## Remote player delivered a package — update our local score.
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_deliver_package(player_idx: int, new_score: int) -> void:
+	if player_idx >= 0 and player_idx < GameSettings.player_count:
+		_player_scores[player_idx] = new_score
+		_player_packages[player_idx] = maxi(_player_packages[player_idx] - 1, 0)
+		_update_ui(player_idx)
+
+
+## Remote side says game is over.
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_end_game(scores: Array) -> void:
+	for i in range(min(scores.size(), GameSettings.player_count)):
+		_player_scores[i] = scores[i]
+	if _game_state != "finished":
+		_end_game()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_EXIT_TREE:
+		if GameSettings.is_online:
+			NetworkManager.disconnect_game()
+			GameSettings.reset_network()
 
 
 func _assign_random_deliveries(player_idx: int) -> void:
@@ -562,6 +723,9 @@ func _update_thrown_boxes(delta: float) -> void:
 				b["bounce_end"] = sprite.position + bounce_dir * BOX_BOUNCE_DIST
 				_player_scores[pidx] += 1
 				_update_ui(pidx)
+				
+				if GameSettings.is_online and pidx == _local_player_idx:
+					_rpc_deliver_package.rpc(pidx, _player_scores[pidx])
 
 		elif b["phase"] == "bouncing":
 			b["bounce_timer"] += delta
@@ -606,16 +770,23 @@ func _update_ui(player_idx: int) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	# P1 minimap toggle: Tab
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.physical_keycode == KEY_TAB:
-			if _minimaps.size() > 0:
-				_minimaps[0].visible = not _minimaps[0].visible
-			get_viewport().set_input_as_handled()
-		elif event.physical_keycode == KEY_CTRL and event.location == KEY_LOCATION_RIGHT:
-			if _minimaps.size() > 1:
-				_minimaps[1].visible = not _minimaps[1].visible
-			get_viewport().set_input_as_handled()
+		if GameSettings.is_online:
+			# Online: Tab toggles the local player's minimap
+			if event.physical_keycode == KEY_TAB:
+				if _local_player_idx < _minimaps.size() and _minimaps[_local_player_idx] != null:
+					_minimaps[_local_player_idx].visible = not _minimaps[_local_player_idx].visible
+				get_viewport().set_input_as_handled()
+		else:
+			# Local: P1 = Tab, P2 = R-CTRL
+			if event.physical_keycode == KEY_TAB:
+				if _minimaps.size() > 0:
+					_minimaps[0].visible = not _minimaps[0].visible
+				get_viewport().set_input_as_handled()
+			elif event.physical_keycode == KEY_CTRL and event.location == KEY_LOCATION_RIGHT:
+				if _minimaps.size() > 1:
+					_minimaps[1].visible = not _minimaps[1].visible
+				get_viewport().set_input_as_handled()
 
 
 # ── Scene measurement ─────────────────────────────────────────────────────────
@@ -889,8 +1060,8 @@ func _cell_is_enclosed(r: int, c: int) -> bool:
 
 # ── Car spawn ─────────────────────────────────────────────────────────────────
 
-func _spawn_both_cars() -> void:
-	for p in range(2):
+func _spawn_cars() -> void:
+	for p in range(GameSettings.player_count):
 		var car := _spawn_car_for_player(p + 1)
 		if car != null:
 			_cars.append(car)
@@ -908,6 +1079,14 @@ func _spawn_car_for_player(player_id: int) -> Node2D:
 	# Set the player_id so the car reads the right input actions
 	car.player_id = player_id
 
+	# In online mode, only the local player's car accepts input
+	if GameSettings.is_online:
+		var p_idx := player_id - 1  # player_id is 1-based
+		car.is_local = (p_idx == _local_player_idx)
+		# All online players use WASD (p1 actions)
+		if car.is_local:
+			car.player_id = 1  # force P1 actions for WASD
+
 	# Spawn equally close to the post office, parked on the road in front of it
 	if _post_office != null:
 		var po_pos := _post_office.global_position
@@ -917,10 +1096,9 @@ func _spawn_car_for_player(player_id: int) -> Node2D:
 		
 		# Offset cars sideways along the road
 		var right_dir := house_fwd.rotated(PI / 2.0)
-		if player_id == 1:
-			car.position = road_center - right_dir * 500.0
-		else:
-			car.position = road_center + right_dir * 500.0
+		var p_idx := player_id - 1
+		var offset_val = (float(p_idx) - (GameSettings.player_count - 1) / 2.0) * 500.0
+		car.position = road_center + right_dir * offset_val
 		
 		# Face the cars along the road
 		car.rotation = _post_office.rotation + PI / 2.0
@@ -931,10 +1109,7 @@ func _spawn_car_for_player(player_id: int) -> Node2D:
 	# Player-specific color tinting
 	var sprite = car.get_node_or_null("Sprite2D")
 	if sprite != null:
-		if player_id == 1:
-			sprite.modulate = P1_COLOR
-		else:
-			sprite.modulate = P2_COLOR
+		sprite.modulate = _player_colors[(player_id - 1) % 4]
 
 	# Remove the Camera2D from the car scene — we use our own SubViewport cameras
 	var car_cam = car.get_node_or_null("Camera2D")
@@ -1026,7 +1201,11 @@ class _GrassBg extends Node2D:
 
 func _build_minimap() -> void:
 	# Build a per-player minimap overlay inside each SubViewport
-	for p in range(2):
+	for p in range(GameSettings.player_count):
+		if p >= _viewports.size() or _viewports[p] == null:
+			_minimaps.append(null)
+			continue
+
 		# CanvasLayer so the minimap stays screen-fixed
 		var mm_layer := CanvasLayer.new()
 		mm_layer.layer = 10
@@ -1091,7 +1270,7 @@ class _MinimapDraw extends Control:
 
 		# ── Background panel ─────────────────────────────────────────────────
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.08, 0.08, 0.12, 0.92), true)
-		var border_color : Color = m.P1_COLOR if player_idx == 0 else m.P2_COLOR
+		var border_color : Color = m._player_colors[player_idx % 4]
 		draw_rect(Rect2(Vector2.ZERO, size), border_color.lerp(Color.WHITE, 0.3) * Color(1,1,1,0.6), false, 2.0)
 
 		# ── Roads ────────────────────────────────────────────────────────────
@@ -1129,7 +1308,7 @@ class _MinimapDraw extends Control:
 			draw_rect(Rect2(cp - Vector2(2, 2), Vector2(4, 4)), Color(0.6, 0.6, 0.6, 0.5))
 
 		# ── Only this player's target houses ─────────────────────────────────
-		var my_color : Color = m.P1_COLOR if player_idx == 0 else m.P2_COLOR
+		var my_color : Color = m._player_colors[player_idx % 4]
 		var my_targets : Array = m._player_targets[player_idx]
 		for h in my_targets:
 			var cw : Vector2 = h.position + half_world
@@ -1143,12 +1322,12 @@ class _MinimapDraw extends Control:
 			draw_rect(Rect2(cp - Vector2(5, 5), Vector2(10, 10)), Color(0.2, 0.4, 1.0, 1.0))
 			draw_rect(Rect2(cp - Vector2(5, 5), Vector2(10, 10)), Color(1, 1, 1, 1), false, 1.0)
 
-		# ── Car dots (both players) ──────────────────────────────────────────
+		# ── Car dots (all players) ──────────────────────────────────────────
 		for p in range(m._cars.size()):
 			var car : Node2D = m._cars[p]
 			if car == null:
 				continue
-			var c_color : Color = m.P1_COLOR if p == 0 else m.P2_COLOR
+			var c_color : Color = m._player_colors[p % 4]
 			var cw  : Vector2 = car.position + half_world
 			var cp  := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
 			var dot_size := 7.0 if p == player_idx else 4.0

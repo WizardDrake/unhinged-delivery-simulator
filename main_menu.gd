@@ -52,6 +52,14 @@ func _ready() -> void:
 	_btn_local.pressed.connect(_on_local_multiplayer)
 	vbox.add_child(_btn_local)
 
+	var btn_host := _make_button("HOST ONLINE", font)
+	btn_host.pressed.connect(_on_host_online)
+	vbox.add_child(btn_host)
+
+	var btn_join := _make_button("JOIN ONLINE", font)
+	btn_join.pressed.connect(_on_join_online)
+	vbox.add_child(btn_join)
+
 	_btn_exit = _make_button("EXIT", font)
 	_btn_exit.pressed.connect(_on_exit)
 	vbox.add_child(_btn_exit)
@@ -62,7 +70,7 @@ func _ready() -> void:
 	vbox.add_child(spacer2)
 
 	var hint := Label.new()
-	hint.text = "P1: WASD  •  P2: Arrow Keys"
+	hint.text = "Local: P1 WASD  •  P2 Arrow Keys\nOnline: WASD (both players)"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.add_theme_font_size_override("font_size", 22)
 	hint.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6, 0.6))
@@ -113,7 +121,22 @@ func _make_button(label: String, font: Font) -> Button:
 
 
 func _on_local_multiplayer() -> void:
+	GameSettings.reset_network()
 	get_tree().change_scene_to_file("res://settings_menu.tscn")
+
+
+func _on_host_online() -> void:
+	var lobby: Node = load("res://lobby_menu.tscn").instantiate()
+	lobby.mode = "host"
+	get_tree().root.add_child(lobby)
+	queue_free()
+
+
+func _on_join_online() -> void:
+	var lobby: Node = load("res://lobby_menu.tscn").instantiate()
+	lobby.mode = "join"
+	get_tree().root.add_child(lobby)
+	queue_free()
 
 
 func _on_exit() -> void:

@@ -22,6 +22,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 GameSettings="*res://game_settings.gd"
+NetworkManager="*res://network_manager.gd"
 
 [display]
 

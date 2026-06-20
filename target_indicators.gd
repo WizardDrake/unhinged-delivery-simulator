@@ -38,7 +38,7 @@ func _draw() -> void:
 			# Let's just draw it, CanvasItem drawing handles clipping.
 			pass
 			
-		var color : Color = main_ref.P1_COLOR if player_idx == 0 else main_ref.P2_COLOR
+		var color : Color = main_ref._player_colors[player_idx % 4]
 		var p1 := screen_pos + Vector2(0, bounce)
 		var p2 := screen_pos + Vector2(-arrow_size/2.0, -arrow_size + bounce)
 		var p3 := screen_pos + Vector2(arrow_size/2.0, -arrow_size + bounce)
