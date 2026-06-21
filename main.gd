@@ -51,6 +51,24 @@ var _player_targets  : Array = []  # Array of Array[Sprite2D]
 var _ui_packages : Array[Label] = []
 var _ui_scores   : Array[Label] = []
 
+# Shop & Items state
+var _player_has_item : Array[bool] = []
+var _player_item_cooldown : Array[float] = []
+var _ui_items : Array[Label] = []
+var _ui_blind_screens : Array[ColorRect] = []
+var _ui_item_menus : Array[PanelContainer] = []
+var _ui_blind_particles : Array[CPUParticles2D] = []
+var _blind_timers : Array[float] = []
+var _player_selected_item : Array[int] = []
+var _player_item_locked : Array[bool] = []
+var ITEM_NAMES = ["Peanuts", "Oil (Slippery)", "Oil (Sticky)"]
+var _oil_spills : Array[Dictionary] = []
+var _boot_timers : Array[float] = []
+var _cop_cooldown : Array[float] = []
+var _camera_trauma : Array[float] = []
+var _player_wanted : Array[bool] = []
+var _cops : Array[Node2D] = []
+
 # Legacy single-car reference for minimap compat
 var _car : Node2D
 
@@ -107,6 +125,15 @@ func _ready() -> void:
 		_player_packages.append(0)
 		_player_scores.append(0)
 		_player_targets.append([])
+		_player_has_item.append(false)
+		_player_item_cooldown.append(0.0)
+		_blind_timers.append(0.0)
+		_player_selected_item.append(0)
+		_player_item_locked.append(false)
+		_boot_timers.append(0.0)
+		_cop_cooldown.append(0.0)
+		_camera_trauma.append(0.0)
+		_player_wanted.append(false)
 
 	# ── Network mode setup ───────────────────────────────────────────────────
 	if GameSettings.is_online:
@@ -155,6 +182,10 @@ func _setup_split_screen() -> void:
 	_ui_scores.resize(GameSettings.player_count)
 	_ui_round_timers.resize(GameSettings.player_count)
 	_ui_center_labels.resize(GameSettings.player_count)
+	_ui_items.resize(GameSettings.player_count)
+	_ui_blind_screens.resize(GameSettings.player_count)
+	_ui_item_menus.resize(GameSettings.player_count)
+	_ui_blind_particles.resize(GameSettings.player_count)
 
 	if GameSettings.is_online:
 		# ── Online mode: single fullscreen viewport ─────────────────────────
@@ -272,18 +303,26 @@ func _build_player_hud(player_idx: int) -> void:
 	var top_bar := ColorRect.new()
 	top_bar.color = Color(0.0, 0.0, 0.0, 0.45)
 	top_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	top_bar.offset_bottom = 52
+	top_bar.offset_bottom = 90
 	hud.add_child(top_bar)
 
-	# HBox for the top bar content
-	var top_hbox := HBoxContainer.new()
-	top_hbox.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	top_hbox.offset_left = 12
-	top_hbox.offset_right = -12
-	top_hbox.offset_top = 6
-	top_hbox.offset_bottom = 48
-	top_hbox.add_theme_constant_override("separation", 20)
-	hud.add_child(top_hbox)
+	var top_vbox := VBoxContainer.new()
+	top_vbox.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	top_vbox.offset_left = 12
+	top_vbox.offset_right = -12
+	top_vbox.offset_top = 6
+	top_vbox.offset_bottom = 86
+	hud.add_child(top_vbox)
+
+	# Row 1
+	var row1 := HBoxContainer.new()
+	row1.add_theme_constant_override("separation", 20)
+	top_vbox.add_child(row1)
+	
+	# Row 2
+	var row2 := HBoxContainer.new()
+	row2.add_theme_constant_override("separation", 20)
+	top_vbox.add_child(row2)
 
 	# Player tag
 	var p_label := Label.new()
@@ -294,7 +333,7 @@ func _build_player_hud(player_idx: int) -> void:
 	p_label.add_theme_color_override("font_color", player_color)
 	p_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	p_label.add_theme_constant_override("outline_size", 4)
-	top_hbox.add_child(p_label)
+	row1.add_child(p_label)
 
 	# Package icon + count
 	var pkg_label := Label.new()
@@ -305,7 +344,7 @@ func _build_player_hud(player_idx: int) -> void:
 	pkg_label.add_theme_color_override("font_color", Color(1, 1, 1))
 	pkg_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	pkg_label.add_theme_constant_override("outline_size", 4)
-	top_hbox.add_child(pkg_label)
+	row1.add_child(pkg_label)
 	_ui_packages[player_idx] = pkg_label
 
 	# Score icon + count
@@ -317,13 +356,30 @@ func _build_player_hud(player_idx: int) -> void:
 	score_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
 	score_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	score_label.add_theme_constant_override("outline_size", 4)
-	top_hbox.add_child(score_label)
+	row1.add_child(score_label)
 	_ui_scores[player_idx] = score_label
 
 	# Spacer
 	var spacer1 := Control.new()
-	spacer1.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top_hbox.add_child(spacer1)
+	spacer1.custom_minimum_size = Vector2(20, 0)
+	row1.add_child(spacer1)
+
+	# Item UI
+	var item_label := Label.new()
+	item_label.text = "Item: None"
+	if font != null:
+		item_label.add_theme_font_override("font", font)
+	item_label.add_theme_font_size_override("font_size", 22)
+	item_label.add_theme_color_override("font_color", Color(0.8, 0.4, 1.0))
+	item_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	item_label.add_theme_constant_override("outline_size", 4)
+	row2.add_child(item_label)
+	_ui_items[player_idx] = item_label
+
+	# Spacer
+	var spacer1_2 := Control.new()
+	spacer1_2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row1.add_child(spacer1_2)
 
 	# Round timer
 	var time_label := Label.new()
@@ -334,13 +390,13 @@ func _build_player_hud(player_idx: int) -> void:
 	time_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
 	time_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
 	time_label.add_theme_constant_override("outline_size", 4)
-	top_hbox.add_child(time_label)
+	row1.add_child(time_label)
 	_ui_round_timers[player_idx] = time_label
 
 	# Spacer to push minimap hint to the right
 	var spacer2 := Control.new()
 	spacer2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top_hbox.add_child(spacer2)
+	row2.add_child(spacer2)
 
 	# Minimap key hint
 	var mm_hint := Label.new()
@@ -349,7 +405,7 @@ func _build_player_hud(player_idx: int) -> void:
 		mm_hint.add_theme_font_override("font", font)
 	mm_hint.add_theme_font_size_override("font_size", 18)
 	mm_hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.4))
-	top_hbox.add_child(mm_hint)
+	row2.add_child(mm_hint)
 
 	# ── Center screen messages (countdown) ──────────────────────────────────
 	var center_lbl := Label.new()
@@ -374,14 +430,140 @@ func _build_player_hud(player_idx: int) -> void:
 		hud.add_child(indicator)
 		hud.move_child(indicator, 0)
 
+	# ── Blind Screen (Peanuts) ───────────────────────────────────────────────
+	var blind_screen := ColorRect.new()
+	blind_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	blind_screen.color = Color(1.0, 1.0, 1.0, 0.0) # fully transparent initially
+	blind_screen.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(blind_screen)
+	_ui_blind_screens[player_idx] = blind_screen
+
+	var peanuts := CPUParticles2D.new()
+	peanuts.amount = 150
+	peanuts.lifetime = 2.0
+	peanuts.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+	peanuts.emission_rect_extents = Vector2(4000, 20)
+	peanuts.position = Vector2(0, 0)
+	peanuts.direction = Vector2(0, 1)
+	peanuts.spread = 15.0
+	peanuts.initial_velocity_min = 400.0
+	peanuts.initial_velocity_max = 800.0
+	peanuts.scale_amount_min = 10.0
+	peanuts.scale_amount_max = 25.0
+	peanuts.color = Color(0.9, 0.8, 0.6)
+	peanuts.emitting = false
+	
+	var peanut_anchor := Control.new()
+	peanut_anchor.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	blind_screen.add_child(peanut_anchor)
+	peanut_anchor.add_child(peanuts)
+	_ui_blind_particles[player_idx] = peanuts
+
+	# ── Item Choice Menu ───────────────────────────────────────────────
+	var item_menu := PanelContainer.new()
+	item_menu.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	item_menu.visible = false
+	
+	var style = StyleBoxFlat.new()
+	style.bg_color = Color(0.1, 0.1, 0.1, 0.9)
+	style.border_width_left = 4
+	style.border_width_right = 4
+	style.border_width_top = 4
+	style.border_width_bottom = 4
+	style.border_color = Color(1, 0.8, 0.2)
+	item_menu.add_theme_stylebox_override("panel", style)
+	
+	var vbox := VBoxContainer.new()
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 15)
+	
+	var title := Label.new()
+	title.text = "CHOOSE YOUR ITEM\n(Steer: Select, Space: Confirm)"
+	if not GameSettings.is_online and player_idx == 1:
+		title.text = "CHOOSE YOUR ITEM\n(Steer: Select, /: Confirm)"
+	if font != null:
+		title.add_theme_font_override("font", font)
+	title.add_theme_font_size_override("font_size", 24)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title)
+	
+	var options_vbox := VBoxContainer.new()
+	item_menu.set_meta("options", options_vbox)
+	for i in range(ITEM_NAMES.size()):
+		var lbl := Label.new()
+		lbl.text = ITEM_NAMES[i]
+		if font != null:
+			lbl.add_theme_font_override("font", font)
+		lbl.add_theme_font_size_override("font_size", 32)
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		options_vbox.add_child(lbl)
+	vbox.add_child(options_vbox)
+	
+	item_menu.add_child(vbox)
+	hud.add_child(item_menu)
+	_ui_item_menus[player_idx] = item_menu
+
 
 func _process(delta: float) -> void:
 	_process_game_state(delta)
 
+	# Process blind timers
+	for p in range(GameSettings.player_count):
+		if _blind_timers[p] > 0.0:
+			_blind_timers[p] -= delta
+			var alpha = minf(1.0, _blind_timers[p] / 1.0) # fade out over last second
+			if _ui_blind_screens[p] != null:
+				_ui_blind_screens[p].color = Color(1.0, 1.0, 1.0, alpha * 0.8)
+			if _blind_timers[p] <= 0.0:
+				if _ui_blind_particles[p] != null:
+					_ui_blind_particles[p].emitting = false
+				if _ui_blind_screens[p] != null:
+					_ui_blind_screens[p].color = Color(1.0, 1.0, 1.0, 0.0)
+
+		# Process boot timers & cop cooldown
+		if _boot_timers[p] > 0.0:
+			_boot_timers[p] -= delta
+			if _cars[p] != null:
+				_cars[p].frozen = true
+			if _boot_timers[p] <= 0.0 and _cars[p] != null:
+				if _game_state == "playing":
+					_cars[p].frozen = false
+				_update_ui(p)
+
+		if _cop_cooldown[p] > 0.0:
+			_cop_cooldown[p] -= delta
+
+	# Process oil spills
+	var players_to_process = [_local_player_idx] if GameSettings.is_online else range(GameSettings.player_count)
+	for p in players_to_process:
+		if p >= _cars.size() or _cars[p] == null: continue
+		var on_oil = false
+		var oil_type = 0
+		for spill in _oil_spills:
+			if spill["owner"] != p and _cars[p].global_position.distance_to(spill["pos"]) < 300.0:
+				on_oil = true
+				oil_type = spill["type"]
+				break
+		if on_oil and not _cars[p].frozen:
+			var speed = _cars[p].velocity.length()
+			if oil_type == 1: # Slippery Oil - Extreme spinout
+				var spin_factor = clampf(speed / 1000.0, 0.1, 1.0)
+				_cars[p].rotation += 10.0 * spin_factor * delta
+				_cars[p].velocity = _cars[p].velocity.rotated(sin(Time.get_ticks_msec()/30.0) * 4.0 * delta)
+				_cars[p].velocity *= 0.98
+			elif oil_type == 2: # Sticky Oil - Extreme slowdown
+				_cars[p].velocity *= 0.85
+				_cars[p].rotation += sin(Time.get_ticks_msec()/20.0) * 0.5 * delta
+
 	# Update cameras to follow cars
 	for p in range(GameSettings.player_count):
 		if p < _cars.size() and _cars[p] != null and p < _cameras.size() and _cameras[p] != null:
-			_cameras[p].global_position = _cars[p].global_position
+			var cam_pos = _cars[p].global_position
+			if p < _camera_trauma.size() and _camera_trauma[p] > 0.0:
+				var trauma_sq = _camera_trauma[p] * _camera_trauma[p]
+				cam_pos += Vector2(randf_range(-1, 1), randf_range(-1, 1)) * trauma_sq * 50.0
+				_camera_trauma[p] = maxf(0.0, _camera_trauma[p] - delta * 0.5)
+			_cameras[p].global_position = cam_pos
 
 	# ── Network car sync ────────────────────────────────────────────────────
 	if GameSettings.is_online:
@@ -398,6 +580,22 @@ func _process(delta: float) -> void:
 	_npcs = _npcs.filter(func(n): return is_instance_valid(n) and not n.is_queued_for_deletion())
 	if _npcs.size() < 25:
 		_spawn_one_npc()
+
+	# Process Cops
+	_cops = _cops.filter(func(c): return is_instance_valid(c) and not c.is_queued_for_deletion())
+	while _cops.size() < 4:
+		_spawn_one_cop()
+		
+	for cop in _cops:
+		var target = null
+		var closest_dist = 9999999.0
+		for p in range(GameSettings.player_count):
+			if _player_wanted[p] and _cars[p] != null:
+				var dist = cop.global_position.distance_to(_cars[p].global_position)
+				if dist < closest_dist:
+					closest_dist = dist
+					target = _cars[p]
+		cop.target_player = target
 
 	# Per-player game logic
 	var players_to_check : Array[int] = []
@@ -417,6 +615,55 @@ func _process(delta: float) -> void:
 		var speed : float = 0.0
 		if "velocity" in _cars[p]:
 			speed = _cars[p].velocity.length()
+
+		var at_po = (_post_office != null and car_pos.distance_to(_post_office.global_position) < 2000.0)
+
+		# Check Shop & Items
+		if _player_item_cooldown[p] > 0.0:
+			_player_item_cooldown[p] -= delta
+			if _player_item_cooldown[p] <= 0.0:
+				_player_item_cooldown[p] = 0.0
+			_update_ui(p)
+
+		var is_shopping = (_ui_item_menus[p] != null and _ui_item_menus[p].visible)
+
+		var shop_action = "p1_shop" if GameSettings.is_online else "p%d_shop" % (p + 1)
+		var right_action = "p1_steer_right" if GameSettings.is_online else "p%d_steer_right" % (p + 1)
+		var left_action = "p1_steer_left" if GameSettings.is_online else "p%d_steer_left" % (p + 1)
+
+		if Input.is_action_just_pressed(shop_action):
+			if at_po and not _player_item_locked[p] and _player_scores[p] >= 5:
+				if not is_shopping:
+					# Open menu
+					if _ui_item_menus[p] != null:
+						_ui_item_menus[p].visible = true
+					_cars[p].frozen = true
+				else:
+					# Confirm choice
+					_player_item_locked[p] = true
+					_player_has_item[p] = true
+					_player_item_cooldown[p] = 0.0
+					if _ui_item_menus[p] != null:
+						_ui_item_menus[p].visible = false
+					_cars[p].frozen = false
+					_update_ui(p)
+			elif _player_has_item[p] and _player_item_cooldown[p] <= 0.0:
+				_player_item_cooldown[p] = 60.0
+				_use_item(p, _player_selected_item[p])
+				_update_ui(p)
+
+		# If shopping, cycle with steer left/right
+		if is_shopping:
+			if Input.is_action_just_pressed(right_action):
+				_player_selected_item[p] = (_player_selected_item[p] + 1) % ITEM_NAMES.size()
+				_update_ui(p)
+			elif Input.is_action_just_pressed(left_action):
+				_player_selected_item[p] = (_player_selected_item[p] - 1 + ITEM_NAMES.size()) % ITEM_NAMES.size()
+				_update_ui(p)
+			# Close shop if they somehow leave PO
+			if not at_po:
+				_ui_item_menus[p].visible = false
+				_cars[p].frozen = false
 
 		# Check Post Office (pickup — no box thrown)
 		if _post_office != null and _player_packages[p] == 0 and speed < 400.0:
@@ -622,6 +869,92 @@ func _rpc_end_game(scores: Array) -> void:
 		_end_game()
 
 
+func _use_item(user_idx: int, item_type: int) -> void:
+	if GameSettings.is_online:
+		_rpc_use_item.rpc(user_idx, item_type)
+	if item_type == 0:
+		_trigger_blind(user_idx)
+	elif item_type == 1 or item_type == 2:
+		_spawn_oil_spill(user_idx, item_type)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_use_item(user_idx: int, item_type: int) -> void:
+	if item_type == 0:
+		_trigger_blind(user_idx)
+	elif item_type == 1 or item_type == 2:
+		_spawn_oil_spill(user_idx, item_type)
+
+
+func _trigger_blind(user_idx: int) -> void:
+	for p in range(GameSettings.player_count):
+		if p != user_idx:
+			_blind_timers[p] = 4.0  # Increased to 4 seconds
+			if p < _camera_trauma.size():
+				_camera_trauma[p] = 1.0 # Screen shake
+			if p < _ui_blind_particles.size() and _ui_blind_particles[p] != null:
+				_ui_blind_particles[p].amount = 300 # More particles!
+				_ui_blind_particles[p].emitting = true
+				_ui_blind_particles[p].restart()
+
+
+func _spawn_oil_spill(user_idx: int, type: int) -> void:
+	if _cars[user_idx] == null: return
+	var spill_pos = _cars[user_idx].global_position
+	
+	var spill = Sprite2D.new()
+	if type == 1:
+		spill.texture = load("res://assets/oil_spill_1.png")
+	else:
+		spill.texture = load("res://assets/oil_spill_3.png")
+		
+	# Start tiny for a pop-in effect
+	spill.scale = Vector2(0.1, 0.1) 
+	spill.global_position = spill_pos
+	spill.z_index = -1
+	add_child(spill)
+	
+	# Bounce scale animation
+	var tween = create_tween().set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(spill, "scale", Vector2(2.5, 2.5), 0.8)
+	
+	_oil_spills.append({"pos": spill_pos, "type": type, "owner": user_idx})
+
+
+func report_npc_crash(player_idx: int, pos: Vector2) -> void:
+	if _cop_cooldown[player_idx] <= 0.0:
+		_cop_cooldown[player_idx] = 10.0 # More consistent
+		if not _player_wanted[player_idx]:
+			_player_wanted[player_idx] = true
+			if GameSettings.is_online:
+				_rpc_set_wanted.rpc(player_idx, true)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_set_wanted(player_idx: int, wanted: bool) -> void:
+	if player_idx >= 0 and player_idx < _player_wanted.size():
+		_player_wanted[player_idx] = wanted
+
+
+func boot_player(player_node: Node2D) -> void:
+	var idx = _cars.find(player_node)
+	if idx >= 0:
+		_boot_timers[idx] = 15.0
+		_player_wanted[idx] = false
+		if GameSettings.is_online:
+			_rpc_set_wanted.rpc(idx, false)
+			_rpc_boot_player.rpc(idx)
+		_update_ui(idx)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_boot_player(player_idx: int) -> void:
+	if player_idx >= 0 and player_idx < _boot_timers.size():
+		_boot_timers[player_idx] = 15.0
+		_player_wanted[player_idx] = false
+		_update_ui(player_idx)
+
+
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_EXIT_TREE:
 		if GameSettings.is_online:
@@ -767,6 +1100,36 @@ func _update_ui(player_idx: int) -> void:
 			_ui_packages[player_idx].text = "Packages: " + str(_player_packages[player_idx])
 	if player_idx < _ui_scores.size() and _ui_scores[player_idx] != null:
 		_ui_scores[player_idx].text = "Score: " + str(_player_scores[player_idx])
+	if player_idx < _ui_items.size() and _ui_items[player_idx] != null:
+		var item_name = ITEM_NAMES[_player_selected_item[player_idx]]
+		if _boot_timers[player_idx] > 0.0:
+			_ui_items[player_idx].text = "BOOTED! %ds" % int(ceil(_boot_timers[player_idx]))
+		elif not _player_item_locked[player_idx]:
+			var is_shopping = (_ui_item_menus[player_idx] != null and _ui_item_menus[player_idx].visible)
+			if is_shopping:
+				_ui_items[player_idx].text = "Select Item: " + item_name + " (Space: Confirm)"
+			else:
+				if _player_scores[player_idx] >= 5:
+					_ui_items[player_idx].text = "Press Space at PO to open Shop!"
+				else:
+					_ui_items[player_idx].text = "Shop Unlocks at 5 Points!"
+		elif not _player_has_item[player_idx]:
+			_ui_items[player_idx].text = "Item: " + item_name + " (Empty)"
+		elif _player_item_cooldown[player_idx] > 0.0:
+			_ui_items[player_idx].text = "Item: %ds" % int(ceil(_player_item_cooldown[player_idx]))
+		else:
+			_ui_items[player_idx].text = "Item: " + item_name + " [READY]"
+
+	if player_idx < _ui_item_menus.size() and _ui_item_menus[player_idx] != null:
+		var opts = _ui_item_menus[player_idx].get_meta("options")
+		for i in range(opts.get_child_count()):
+			var lbl = opts.get_child(i) as Label
+			if i == _player_selected_item[player_idx]:
+				lbl.add_theme_color_override("font_color", Color(0.2, 1.0, 0.2))
+				lbl.text = "> " + ITEM_NAMES[i] + " <"
+			else:
+				lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+				lbl.text = ITEM_NAMES[i]
 
 
 func _input(event: InputEvent) -> void:
@@ -1162,6 +1525,24 @@ func _spawn_one_npc() -> void:
 	_npcs.append(npc)
 
 
+func _spawn_one_cop() -> void:
+	var cop_scene = load("res://cop_car.tscn")
+	if cop_scene == null or _traffic_paths.is_empty():
+		return
+	var cop = cop_scene.instantiate() as Node2D
+	add_child(cop)
+	var path_idx := _rng.randi_range(0, _traffic_paths.size() - 1)
+	var path: Array = _traffic_paths[path_idx]
+	var start_idx := _rng.randi_range(0, path.size() - 1)
+	cop.init_route(path, start_idx, self)
+	
+	var next_idx := (start_idx + 1) % path.size()
+	var dir: Vector2 = (path[next_idx] - path[start_idx]).normalized()
+	if dir.length_squared() > 0.01:
+		cop.rotation = dir.angle() + PI * 0.5
+	_cops.append(cop)
+
+
 # ── Grass background ──────────────────────────────────────────────────────────
 
 func _spawn_grass_bg() -> void:
@@ -1170,31 +1551,60 @@ func _spawn_grass_bg() -> void:
 		push_error("Could not load grass texture")
 		return
 
-	# Match the pixel-art scale used by every other asset.
-	const TILE_SCALE := 63.1875
+	const TILE_SCALE := 15.0
 	var pad     := _cell_size            # one extra cell of padding on every edge
 	var total_w := grid_cols * _cell_size + pad * 2.0
 	var total_h := grid_rows * _cell_size + pad * 2.0
 
-	var bg := _GrassBg.new()
-	bg.tex   = tex
-	bg.scale = Vector2(TILE_SCALE, TILE_SCALE)
-	# Rect is in LOCAL (pre-scale) space so we divide by the scale.
-	bg.rect  = Rect2(
-		Vector2(-total_w * 0.5 / TILE_SCALE, -total_h * 0.5 / TILE_SCALE),
-		Vector2(total_w / TILE_SCALE,          total_h / TILE_SCALE)
-	)
+	var shader = Shader.new()
+	shader.code = """
+shader_type canvas_item;
+
+uniform sampler2D grass_tex : filter_nearest, repeat_enable;
+uniform vec2 tile_scale;
+
+float rand(vec2 co){
+    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+}
+
+void fragment() {
+    vec2 world_pos = UV * tile_scale;
+    vec2 tile_id = floor(world_pos);
+    float r = rand(tile_id);
+    
+    int rot = int(r * 4.0);
+    vec2 local_uv = fract(world_pos);
+    
+    if (rot == 1) {
+        local_uv = vec2(local_uv.y, 1.0 - local_uv.x);
+    } else if (rot == 2) {
+        local_uv = vec2(1.0 - local_uv.x, 1.0 - local_uv.y);
+    } else if (rot == 3) {
+        local_uv = vec2(1.0 - local_uv.y, local_uv.x);
+    }
+    
+    vec4 tex_color = texture(grass_tex, local_uv);
+    
+    // Different random shade of green per tile
+    float shade = 0.7 + rand(tile_id + vec2(1.0, 1.0)) * 0.4;
+    vec3 color_mod = vec3(0.85 * shade, 1.15 * shade, 0.75 * shade);
+    
+    COLOR = vec4(tex_color.rgb * color_mod, tex_color.a);
+}
+"""
+	var mat = ShaderMaterial.new()
+	mat.shader = shader
+	mat.set_shader_parameter("grass_tex", tex)
+	mat.set_shader_parameter("tile_scale", Vector2(total_w / (4.0 * TILE_SCALE), total_h / (4.0 * TILE_SCALE)))
+
+	var bg = ColorRect.new()
+	bg.material = mat
+	bg.position = Vector2(-total_w * 0.5, -total_h * 0.5)
+	bg.size = Vector2(total_w, total_h)
+	bg.z_index = -100
+	
 	add_child(bg)
-	move_child(bg, 0)   # push behind roads, houses, etc.
-
-
-class _GrassBg extends Node2D:
-	var tex  : Texture2D
-	var rect : Rect2
-
-	func _draw() -> void:
-		if tex != null:
-			draw_texture_rect(tex, rect, true)  # true = tile
+	move_child(bg, 0)
 
 
 # ── Minimap ───────────────────────────────────────────────────────────────────

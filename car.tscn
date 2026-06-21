@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://b62yrnpdtxpxm"]
 
 [ext_resource type="Script" uid="uid://p5fojlsjl5yt" path="res://car.gd" id="1_2yx2o"]
-[ext_resource type="Texture2D" uid="uid://bs43fso88ek7f" path="res://assets/delivery_truck.png" id="2_uoj53"]
+[ext_resource type="Texture2D" uid="uid://k4x1l3g0oaca" path="res://assets/delivery_truck.svg" id="2_uoj53"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_htcoj"]
 radius = 108.99999
@@ -14,12 +14,11 @@ motion_mode = 1
 script = ExtResource("1_2yx2o")
 
 [node name="Sprite2D" type="Sprite2D" parent="." unique_id=1469640923]
-position = Vector2(-0.29338455, -0.15743637)
 rotation = 1.5708
-scale = Vector2(11.588658, 11.58866)
+scale = Vector2(0.54563236, 0.5456323)
 texture = ExtResource("2_uoj53")
 region_enabled = true
-region_rect = Rect2(5.214575, 2.099083, 22.633423, 41.349525)
+region_rect = Rect2(153.4975, 170.75299, 515.8099, 861.5633)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=673256990]
 rotation = 1.5708

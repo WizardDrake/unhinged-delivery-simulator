@@ -1,0 +1,32 @@
+[gd_scene format=3 uid="uid://c3q8f5g4h2j1"]
+
+[ext_resource type="Texture2D" uid="uid://b51qj0c4gwaux" path="res://assets/target_truck.svg" id="2_mvk0s"]
+[ext_resource type="Script" uid="uid://cn1rwlissvw2w" path="res://cop_car.gd" id="2_script"]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_mvk0s"]
+radius = 132.06
+height = 583.0
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_boot"]
+size = Vector2(400, 750)
+
+[node name="CopCar" type="CharacterBody2D" unique_id=1816947545 groups=["cop"]]
+collision_layer = 8
+collision_mask = 7
+script = ExtResource("2_script")
+
+[node name="Sprite2D" type="Sprite2D" parent="." unique_id=1484757860]
+position = Vector2(25.500004, -36)
+scale = Vector2(0.7619648, 0.69991094)
+texture = ExtResource("2_mvk0s")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1720983098]
+position = Vector2(12, -4.5)
+shape = SubResource("CapsuleShape2D_mvk0s")
+
+[node name="BootArea" type="Area2D" parent="." unique_id=570848559]
+collision_layer = 0
+collision_mask = 2
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="BootArea" unique_id=1083312146]
+shape = SubResource("RectangleShape2D_boot")

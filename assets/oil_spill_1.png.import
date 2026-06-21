@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bs43fso88ek7f"
-path="res://.godot/imported/delivery_truck.png-761cf9b18f78ead5236f0bdb285fc385.ctex"
+uid="uid://be8tvxoptl0xs"
+path="res://.godot/imported/oil_spill_1.png-4bca9163cb9ca0367c9c53ddc51f44f0.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/delivery_truck.png"
-dest_files=["res://.godot/imported/delivery_truck.png-761cf9b18f78ead5236f0bdb285fc385.ctex"]
+source_file="res://assets/oil_spill_1.png"
+dest_files=["res://.godot/imported/oil_spill_1.png-4bca9163cb9ca0367c9c53ddc51f44f0.ctex"]
 
 [params]
 

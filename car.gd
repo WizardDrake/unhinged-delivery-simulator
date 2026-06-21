@@ -31,15 +31,14 @@ var _sync_vel      := Vector2.ZERO
 var _sync_steer    := 0.0
 var _has_sync_data := false
 
+var _drift_l : CPUParticles2D
+var _drift_r : CPUParticles2D
+
 # Input action names resolved from player_id
 var _action_left  : String
 var _action_right : String
 var _action_accel : String
 var _action_brake : String
-
-var _drift_l : CPUParticles2D
-var _drift_r : CPUParticles2D
-
 
 func _ready() -> void:
 	_action_left  = "p%d_steer_left"  % player_id
@@ -84,6 +83,7 @@ func _physics_process(delta):
 
 	acceleration = Vector2.ZERO
 	get_input()
+		
 	apply_friction(delta)
 	calculate_steering(delta)
 	velocity += acceleration * delta
@@ -97,7 +97,6 @@ func _physics_process(delta):
 	
 	_drift_l.emitting = is_drifting
 	_drift_r.emitting = is_drifting
-
 
 ## Called by the network sync to update this remote car's state.
 func apply_sync(pos: Vector2, rot: float, vel: Vector2, steer: float) -> void:
@@ -143,12 +142,24 @@ func _create_drift_particles() -> CPUParticles2D:
 	
 	return p
 
-
 func _push_npc_hits() -> void:
+	var hit_wall = false
 	for i in get_slide_collision_count():
 		var body := get_slide_collision(i).get_collider()
-		if body != null and body.is_in_group("npc") and body.has_method("receive_player_hit"):
-			body.receive_player_hit(self, get_slide_collision(i))
+		if body != null:
+			if body.is_in_group("npc"):
+				if body.has_method("receive_player_hit"):
+					# Only penalize the player if they were actually driving fast!
+					if velocity.length() > 300.0:
+						body.receive_player_hit(self, get_slide_collision(i))
+						var main_node = get_parent()
+						if main_node and main_node.has_method("report_npc_crash"):
+							main_node.report_npc_crash(player_id - 1, body.global_position)
+			else:
+				hit_wall = true
+				
+	if hit_wall:
+		velocity *= 0.98 # Friction from scraping against a wall
 
 func apply_friction(delta):
 	if acceleration == Vector2.ZERO and velocity.length() < 50:
@@ -160,6 +171,7 @@ func apply_friction(delta):
 func get_input():
 	var turn = Input.get_axis(_action_left, _action_right)
 	steer_direction = turn * deg_to_rad(steering_angle)
+	
 	if Input.is_action_pressed(_action_accel):
 		acceleration = transform.x * engine_power
 	if Input.is_action_pressed(_action_brake):
@@ -170,6 +182,7 @@ func calculate_steering(delta):
 	var front_wheel = position + transform.x * wheel_base / 2.0
 	rear_wheel += velocity * delta
 	front_wheel += velocity.rotated(steer_direction) * delta
+	
 	var new_heading = rear_wheel.direction_to(front_wheel)
 	var traction = traction_slow
 	if velocity.length() > slip_speed:
@@ -179,5 +192,4 @@ func calculate_steering(delta):
 		velocity = lerp(velocity, new_heading * velocity.length(), traction * delta)
 	if d < 0:
 		velocity = -new_heading * min(velocity.length(), max_speed_reverse)
-#	velocity = new_heading * velocity.length()
 	rotation = new_heading.angle()
