@@ -50,10 +50,21 @@ func _build_host_ui() -> void:
 	_vbox.add_child(title)
 
 	# IP info
-	var ip_text := _get_local_ip()
-	var ip_lbl := _label("Your IP:  %s" % ip_text, 28, Color(0.6, 0.8, 1.0))
+	var ip_lbl := _label("Your IP: Fetching...", 28, Color(0.6, 0.8, 1.0))
 	ip_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_vbox.add_child(ip_lbl)
+	
+	var http_req = HTTPRequest.new()
+	add_child(http_req)
+	http_req.request_completed.connect(func(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
+		if result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
+			var ip_str = body.get_string_from_utf8().strip_edges()
+			ip_lbl.text = "Your IP: " + ip_str
+		else:
+			ip_lbl.text = "Your IP: " + _get_local_ip() + " (Local)"
+		http_req.queue_free()
+	)
+	http_req.request("https://api.ipify.org")
 
 	# Port row
 	var port_row := HBoxContainer.new()

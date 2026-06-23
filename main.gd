@@ -539,18 +539,20 @@ func _process(delta: float) -> void:
 		if p >= _cars.size() or _cars[p] == null: continue
 		var on_oil = false
 		var oil_type = 0
+		var hit_spill = null
 		for spill in _oil_spills:
-			if spill["owner"] != p and _cars[p].global_position.distance_to(spill["pos"]) < 300.0:
+			if spill["owner"] != p and _cars[p].global_position.distance_to(spill["pos"]) < 120.0:
 				on_oil = true
 				oil_type = spill["type"]
+				hit_spill = spill
 				break
 		if on_oil and not _cars[p].frozen:
-			var speed = _cars[p].velocity.length()
 			if oil_type == 1: # Slippery Oil - Extreme spinout
-				var spin_factor = clampf(speed / 1000.0, 0.1, 1.0)
-				_cars[p].rotation += 10.0 * spin_factor * delta
-				_cars[p].velocity = _cars[p].velocity.rotated(sin(Time.get_ticks_msec()/30.0) * 4.0 * delta)
-				_cars[p].velocity *= 0.98
+				if _cars[p].has_method("trigger_spinout"):
+					_cars[p].trigger_spinout()
+				if is_instance_valid(hit_spill["node"]):
+					hit_spill["node"].queue_free()
+				_oil_spills.erase(hit_spill)
 			elif oil_type == 2: # Sticky Oil - Extreme slowdown
 				_cars[p].velocity *= 0.85
 				_cars[p].rotation += sin(Time.get_ticks_msec()/20.0) * 0.5 * delta
@@ -569,7 +571,7 @@ func _process(delta: float) -> void:
 	if GameSettings.is_online:
 		var local_car := _cars[_local_player_idx] if _local_player_idx < _cars.size() else null
 		if local_car != null:
-			_rpc_car_sync.rpc(local_car.position.x, local_car.position.y,
+			_rpc_car_sync.rpc(_local_player_idx, local_car.position.x, local_car.position.y,
 				local_car.rotation, local_car.velocity.x, local_car.velocity.y,
 				local_car.steer_direction)
 
@@ -832,9 +834,7 @@ func _end_game() -> void:
 
 ## Receive car position/rotation/velocity from the remote player.
 @rpc("any_peer", "call_remote", "unreliable")
-func _rpc_car_sync(px: float, py: float, rot: float, vx: float, vy: float, steer: float) -> void:
-	var sender_id = multiplayer.get_remote_sender_id()
-	var p_idx = GameSettings.peer_to_player_idx.get(sender_id, -1)
+func _rpc_car_sync(p_idx: int, px: float, py: float, rot: float, vx: float, vy: float, steer: float) -> void:
 	if p_idx >= 0 and p_idx < _cars.size() and _cars[p_idx] != null:
 		_cars[p_idx].apply_sync(Vector2(px, py), rot, Vector2(vx, vy), steer)
 
@@ -904,21 +904,21 @@ func _spawn_oil_spill(user_idx: int, type: int) -> void:
 	
 	var spill = Sprite2D.new()
 	if type == 1:
-		spill.texture = load("res://assets/oil_spill_1.png")
+		spill.texture = load("res://assets/oil_spill_1.svg")
 	else:
-		spill.texture = load("res://assets/oil_spill_3.png")
+		spill.texture = load("res://assets/oil_spill_3.svg")
 		
 	# Start tiny for a pop-in effect
 	spill.scale = Vector2(0.1, 0.1) 
 	spill.global_position = spill_pos
-	spill.z_index = -1
+	spill.z_index = 0
 	add_child(spill)
 	
 	# Bounce scale animation
 	var tween = create_tween().set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
-	tween.tween_property(spill, "scale", Vector2(2.5, 2.5), 0.8)
+	tween.tween_property(spill, "scale", Vector2(0.8, 0.8), 0.8)
 	
-	_oil_spills.append({"pos": spill_pos, "type": type, "owner": user_idx})
+	_oil_spills.append({"pos": spill_pos, "type": type, "owner": user_idx, "node": spill})
 
 
 func report_npc_crash(player_idx: int, pos: Vector2) -> void:

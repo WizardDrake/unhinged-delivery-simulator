@@ -34,6 +34,8 @@ var _has_sync_data := false
 var _drift_l : CPUParticles2D
 var _drift_r : CPUParticles2D
 
+var spinout_timer : float = 0.0
+
 # Input action names resolved from player_id
 var _action_left  : String
 var _action_right : String
@@ -60,6 +62,10 @@ func _ready() -> void:
 	add_child(_drift_r)
 
 
+func trigger_spinout() -> void:
+	if spinout_timer <= 0.0:
+		spinout_timer = 1.5
+
 func _physics_process(delta):
 	if frozen:
 		velocity = Vector2.ZERO
@@ -79,6 +85,18 @@ func _physics_process(delta):
 		var drift2 := fwd2 and (absf(rad_to_deg(steer_direction)) >= 75.0 or slip_angle2 >= 25.0) and velocity.length() > 450.0
 		_drift_l.emitting = drift2
 		_drift_r.emitting = drift2
+		return
+
+	if spinout_timer > 0.0:
+		spinout_timer -= delta
+		rotation += 15.0 * delta
+		velocity *= 0.98
+		move_and_slide()
+		_push_npc_hits()
+		
+		# Emit particles while spinning out
+		_drift_l.emitting = true
+		_drift_r.emitting = true
 		return
 
 	acceleration = Vector2.ZERO
