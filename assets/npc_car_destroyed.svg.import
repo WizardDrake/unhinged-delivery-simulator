@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cqsikxhg6agiy"
-path="res://.godot/imported/house.png-873b23dab4701b230309b6eed0085474.ctex"
+uid="uid://dih4828lnkp3v"
+path="res://.godot/imported/npc_car_destroyed.svg-8cf3cdc5d25de4c2e64d761441fa903a.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/house.png"
-dest_files=["res://.godot/imported/house.png-873b23dab4701b230309b6eed0085474.ctex"]
+source_file="res://assets/npc_car_destroyed.svg"
+dest_files=["res://.godot/imported/npc_car_destroyed.svg-8cf3cdc5d25de4c2e64d761441fa903a.ctex"]
 
 [params]
 
@@ -38,3 +38,6 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
+svg/scale=1.0
+editor/scale_with_editor_scale=false
+editor/convert_colors_with_editor_theme=false

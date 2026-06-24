@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://gk0rxiyu4tid"
-path="res://.godot/imported/post_office.png-b9a9a55b942716ec98e696ff4cc3bd91.ctex"
+uid="uid://6v5q56x51joj"
+path="res://.godot/imported/npc_car.svg-081af76307a67a87d5ed356fea8a1fe2.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/post_office.png"
-dest_files=["res://.godot/imported/post_office.png-b9a9a55b942716ec98e696ff4cc3bd91.ctex"]
+source_file="res://assets/npc_car.svg"
+dest_files=["res://.godot/imported/npc_car.svg-081af76307a67a87d5ed356fea8a1fe2.ctex"]
 
 [params]
 
@@ -38,3 +38,6 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
+svg/scale=1.0
+editor/scale_with_editor_scale=false
+editor/convert_colors_with_editor_theme=false

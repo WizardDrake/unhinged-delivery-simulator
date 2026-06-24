@@ -509,7 +509,7 @@ func _wreck() -> void:
 	is_destroyed = true
 	_state       = State.WRECKED
 
-	var tex := load("res://assets/npc_car_destroyed.png") as Texture2D
+	var tex := load("res://assets/npc_car_destroyed.svg") as Texture2D
 	if tex:
 		_sprite.texture = tex
 	_sprite.modulate = Color(0.45, 0.45, 0.45, 0.85)

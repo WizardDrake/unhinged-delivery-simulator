@@ -27,7 +27,7 @@ const BOX_TEXTURE_PATH   := "res://assets/box.png"
 @export var map_seed : int = 0
 
 # ── Geometry (measured from sprites at startup) ───────────────────────────────
-const HOUSE_SCALE    := 0.25  # visual scale for house sprite
+const HOUSE_SCALE    := 0.625  # visual scale for house sprite
 const CURB_OFFSET    := 500.0 # extra gap from road edge → house centre
 
 # Filled in by _measure_scenes().
