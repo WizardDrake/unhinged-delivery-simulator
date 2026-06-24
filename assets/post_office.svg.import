@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://be8tvxoptl0xs"
-path="res://.godot/imported/oil_spill_1.png-4bca9163cb9ca0367c9c53ddc51f44f0.ctex"
+uid="uid://jhx5ddd8xbab"
+path="res://.godot/imported/post_office.svg-418e7413491c319e397084c3ff59b72b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/oil_spill_1.png"
-dest_files=["res://.godot/imported/oil_spill_1.png-4bca9163cb9ca0367c9c53ddc51f44f0.ctex"]
+source_file="res://assets/post_office.svg"
+dest_files=["res://.godot/imported/post_office.svg-418e7413491c319e397084c3ff59b72b.ctex"]
 
 [params]
 
@@ -38,3 +38,6 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
+svg/scale=1.0
+editor/scale_with_editor_scale=false
+editor/convert_colors_with_editor_theme=false

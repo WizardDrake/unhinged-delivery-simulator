@@ -201,8 +201,8 @@ func _make_button(label: String) -> Button:
 
 
 func _on_start() -> void:
-	get_tree().change_scene_to_file("res://main.tscn")
+	get_tree().change_scene_to_file("res://scenes/main.tscn")
 
 
 func _on_back() -> void:
-	get_tree().change_scene_to_file("res://main_menu.tscn")
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")

@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://c3q8f5g4h2j1"]
 
 [ext_resource type="Texture2D" uid="uid://b51qj0c4gwaux" path="res://assets/target_truck.svg" id="2_mvk0s"]
-[ext_resource type="Script" uid="uid://cn1rwlissvw2w" path="res://cop_car.gd" id="2_script"]
+[ext_resource type="Script" uid="uid://cn1rwlissvw2w" path="res://scripts/cop_car.gd" id="2_script"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_mvk0s"]
 radius = 132.06

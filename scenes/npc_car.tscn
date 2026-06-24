@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://ccve7oql5h85a"]
 
-[ext_resource type="Script" uid="uid://br2sccxd38rov" path="res://npc_car.gd" id="1_npc"]
+[ext_resource type="Script" uid="uid://br2sccxd38rov" path="res://scripts/npc_car.gd" id="1_npc"]
 [ext_resource type="Texture2D" uid="uid://dwsd2lcem0lgn" path="res://assets/npc_car.png" id="2_tex"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_npc"]

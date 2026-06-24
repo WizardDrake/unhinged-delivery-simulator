@@ -122,18 +122,18 @@ func _make_button(label: String, font: Font) -> Button:
 
 func _on_local_multiplayer() -> void:
 	GameSettings.reset_network()
-	get_tree().change_scene_to_file("res://settings_menu.tscn")
+	get_tree().change_scene_to_file("res://scenes/settings_menu.tscn")
 
 
 func _on_host_online() -> void:
-	var lobby: Node = load("res://lobby_menu.tscn").instantiate()
+	var lobby: Node = load("res://scenes/lobby_menu.tscn").instantiate()
 	lobby.mode = "host"
 	get_tree().root.add_child(lobby)
 	queue_free()
 
 
 func _on_join_online() -> void:
-	var lobby: Node = load("res://lobby_menu.tscn").instantiate()
+	var lobby: Node = load("res://scenes/lobby_menu.tscn").instantiate()
 	lobby.mode = "join"
 	get_tree().root.add_child(lobby)
 	queue_free()

@@ -1,0 +1,18 @@
+[gd_scene format=3 uid="uid://b774kep7xoxeh"]
+
+[ext_resource type="Script" uid="uid://d0mv3u2n5wl0o" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="PackedScene" uid="uid://dcrnr3m41k7pr" path="res://scenes/straight_road.tscn" id="2_road"]
+[ext_resource type="PackedScene" uid="uid://b5wj5k5u6c8ve" path="res://scenes/4_way_intersection.tscn" id="3_4way"]
+[ext_resource type="PackedScene" uid="uid://g0ilb8y2n7a8" path="res://scenes/3_way_intersection.tscn" id="4_3way"]
+[ext_resource type="PackedScene" uid="uid://d15uv8m7w258m" path="res://scenes/L_intersection.tscn" id="5_lcorner"]
+[ext_resource type="PackedScene" uid="uid://cdk0mfdcs56d5" path="res://scenes/straight_intersection.tscn" id="6_straight"]
+[ext_resource type="PackedScene" uid="uid://b62yrnpdtxpxm" path="res://scenes/car.tscn" id="7_car"]
+
+[node name="Main" type="Node2D" unique_id=1504240674]
+script = ExtResource("1_main")
+straight_road_scene = ExtResource("2_road")
+four_way_scene = ExtResource("3_4way")
+three_way_scene = ExtResource("4_3way")
+l_corner_scene = ExtResource("5_lcorner")
+straight_inter_scene = ExtResource("6_straight")
+car_scene = ExtResource("7_car")

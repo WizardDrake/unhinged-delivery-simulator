@@ -50,22 +50,26 @@ func _build_host_ui() -> void:
 	_vbox.add_child(title)
 
 	# IP info
-	var ip_lbl := _label("Your IP: Fetching...", 28, Color(0.6, 0.8, 1.0))
-	ip_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_vbox.add_child(ip_lbl)
+	var ip_text := _get_local_ip()
+	var local_ip_lbl := _label("Local IP (LAN):  %s" % ip_text, 24, Color(0.6, 0.8, 1.0))
+	local_ip_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_vbox.add_child(local_ip_lbl)
+	
+	var public_ip_lbl := _label("Public IP (Online): Fetching...", 24, Color(0.8, 0.6, 1.0))
+	public_ip_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_vbox.add_child(public_ip_lbl)
 	
 	var http_req = HTTPRequest.new()
 	add_child(http_req)
 	http_req.request_completed.connect(func(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray):
 		if result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
 			var ip_str = body.get_string_from_utf8().strip_edges()
-			ip_lbl.text = "Your IP: " + ip_str
+			public_ip_lbl.text = "Public IP (Online): " + ip_str
 		else:
-			ip_lbl.text = "Your IP: " + _get_local_ip() + " (Local)"
+			public_ip_lbl.text = "Public IP (Online): Unavailable"
 		http_req.queue_free()
 	)
 	http_req.request("https://api.ipify.org")
-
 	# Port row
 	var port_row := HBoxContainer.new()
 	port_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -276,7 +280,7 @@ func _on_connect_fail() -> void:
 
 func _on_game_starting(_settings: Dictionary) -> void:
 	# Client received start signal — transition to game
-	get_tree().change_scene_to_file("res://main.tscn")
+	get_tree().change_scene_to_file("res://scenes/main.tscn")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -435,7 +439,7 @@ func _make_button(label: String) -> Button:
 func _on_back() -> void:
 	NetworkManager.disconnect_game()
 	GameSettings.reset_network()
-	get_tree().change_scene_to_file("res://main_menu.tscn")
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
 
 func _exit_tree() -> void:

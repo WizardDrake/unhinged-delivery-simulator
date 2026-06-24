@@ -4,7 +4,7 @@ const LANE_OFFSET := 350.0
 
 
 static func generate_paths(map: Node2D, rng: RandomNumberGenerator, count: int) -> Array:
-	var gen: RefCounted = load("res://road_path_generator.gd").new()
+	var gen: RefCounted = load("res://scripts/road_path_generator.gd").new()
 	return gen._generate(map, rng, count)
 
 

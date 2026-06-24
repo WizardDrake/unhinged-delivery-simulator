@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://b62yrnpdtxpxm"]
 
-[ext_resource type="Script" uid="uid://p5fojlsjl5yt" path="res://car.gd" id="1_2yx2o"]
+[ext_resource type="Script" uid="uid://p5fojlsjl5yt" path="res://scripts/car.gd" id="1_2yx2o"]
 [ext_resource type="Texture2D" uid="uid://k4x1l3g0oaca" path="res://assets/delivery_truck.svg" id="2_uoj53"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_htcoj"]

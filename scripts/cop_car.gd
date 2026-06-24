@@ -1,4 +1,4 @@
-extends "res://npc_car.gd"
+extends "res://scripts/npc_car.gd"
 
 var target_player : Node2D = null
 

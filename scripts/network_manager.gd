@@ -124,7 +124,7 @@ func start_online_game(seed_val: int) -> void:
 	GameSettings.player_count = peer_to_player_idx.size()
 
 	# Transition
-	get_tree().change_scene_to_file("res://main.tscn")
+	get_tree().change_scene_to_file("res://scenes/main.tscn")
 
 
 # ── Callbacks ─────────────────────────────────────────────────────────────────

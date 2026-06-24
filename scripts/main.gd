@@ -1,6 +1,6 @@
 extends Node2D
 
-const RoadPathGeneratorScript := preload("res://road_path_generator.gd")
+const RoadPathGeneratorScript := preload("res://scripts/road_path_generator.gd")
 
 # ── Scenes & textures ──────────────────────────────────────────────────────────
 @export var straight_road_scene : PackedScene
@@ -10,7 +10,7 @@ const RoadPathGeneratorScript := preload("res://road_path_generator.gd")
 @export var straight_inter_scene: PackedScene  # straight-through (base = north + south)
 @export var car_scene           : PackedScene
 
-const HOUSE_TEXTURE_PATH := "res://assets/house.png"
+const HOUSE_TEXTURE_PATH := "res://assets/house.svg"
 const BOX_TEXTURE_PATH   := "res://assets/box.png"
 
 # ── Grid config ────────────────────────────────────────────────────────────────
@@ -27,7 +27,7 @@ const BOX_TEXTURE_PATH   := "res://assets/box.png"
 @export var map_seed : int = 0
 
 # ── Geometry (measured from sprites at startup) ───────────────────────────────
-const HOUSE_SCALE    := 12.0  # visual scale for house sprite
+const HOUSE_SCALE    := 0.25  # visual scale for house sprite
 const CURB_OFFSET    := 500.0 # extra gap from road edge → house centre
 
 # Filled in by _measure_scenes().
@@ -87,7 +87,7 @@ const BOX_LINGER_TIME := 0.5      # seconds box stays after bounce before vanish
 var _h_segs : Array
 var _v_segs : Array
 
-var npc_car_scene = preload("res://npc_car.tscn")
+var npc_car_scene = preload("res://scenes/npc_car.tscn")
 var _npcs : Array[Node2D] = []
 var _traffic_paths : Array = []
 
@@ -420,7 +420,7 @@ func _build_player_hud(player_idx: int) -> void:
 	_ui_center_labels[player_idx] = center_lbl
 
 	# ── Target Indicators ────────────────────────────────────────────────────
-	var indicator_script := load("res://target_indicators.gd") as Script
+	var indicator_script := load("res://scripts/target_indicators.gd") as Script
 	if indicator_script != null:
 		var indicator := Control.new()
 		indicator.set_script(indicator_script)
@@ -816,7 +816,7 @@ func _end_game() -> void:
 		if GameSettings.is_online:
 			NetworkManager.disconnect_game()
 			GameSettings.reset_network()
-		get_tree().change_scene_to_file("res://main_menu.tscn")
+		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 	)
 	vbox.add_child(btn)
 
@@ -1377,7 +1377,7 @@ func _place_houses() -> void:
 		_post_office = _houses[po_idx]
 		_houses.remove_at(po_idx)
 		
-		var po_tex = load("res://assets/post_office.png")
+		var po_tex = load("res://assets/post_office.svg")
 		if po_tex != null:
 			_post_office.texture = po_tex
 		_post_office.modulate = Color.WHITE
@@ -1526,7 +1526,7 @@ func _spawn_one_npc() -> void:
 
 
 func _spawn_one_cop() -> void:
-	var cop_scene = load("res://cop_car.tscn")
+	var cop_scene = load("res://scenes/cop_car.tscn")
 	if cop_scene == null or _traffic_paths.is_empty():
 		return
 	var cop = cop_scene.instantiate() as Node2D
