@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unhinged Delivery Simulator</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;800;900&display=swap" rel="stylesheet">
+    <meta name="description" content="An unhinged delivery simulator made in Godot with multiplayer P2P.">
+</head>
+<body>
+    <!-- Custom interactive cursor glow -->
+    <div id="cursor-glow"></div>
+
+    <!-- Background elements -->
+    <div class="blob-cont">
+        <div class="yellow blob"></div>
+        <div class="red blob"></div>
+        <div class="green blob"></div>
+    </div>
+    
+    <div class="glass-container">
+        <header>
+            <nav>
+                <div class="logo">U.D.S.</div>
+                <div class="nav-links">
+                    <a href="#about">About</a>
+                    <a href="#features">Features</a>
+                    <a href="https://github.com/WizardDrake/unhinged-delivery-simulator" target="_blank" rel="noopener noreferrer">GitHub</a>
+                </div>
+            </nav>
+        </header>
+
+        <main>
+            <section class="hero" id="about">
+                <h1 class="glitch" data-text="UNHINGED">UNHINGED</h1>
+                <h2>DELIVERY SIMULATOR</h2>
+                <p>Experience the ultimate chaotic multiplayer P2P delivery rush.</p>
+                
+                <div class="cta-group">
+                    <a href="web/unhinged-delivery-simulator.html" class="btn primary-btn">
+                        <span class="btn-text">PLAY IN BROWSER</span>
+                        <div class="btn-glitch"></div>
+                    </a>
+                    <a href="#features" class="btn secondary-btn">LEARN MORE</a>
+                </div>
+            </section>
+
+            <section id="features" class="features">
+                <div class="feature-card">
+                    <div class="feature-icon">📦</div>
+                    <h3>Chaotic Deliveries</h3>
+                    <p>Deliver packages with absolute disregard for traffic laws. Time is money, and your driving proves it.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🌐</div>
+                    <h3>P2P Multiplayer</h3>
+                    <p>Host or join your friends seamlessly with built-in Peer-to-Peer networking directly in the browser.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🏎️</div>
+                    <h3>Godot Engine</h3>
+                    <p>Built completely in Godot Engine with seamless web export support. High-octane action, zero installs.</p>
+                </div>
+            </section>
+        </main>
+        
+        <footer>
+            <p>&copy; 2026 WizardDrake. All chaos reserved.</p>
+        </footer>
+    </div>
+    
+    <script src="main.js"></script>
+</body>
+</html>
