@@ -83,11 +83,12 @@ var _hit_cooldown_t := 0.0
 
 func _ready() -> void:
 	# Random colour tint so every NPC looks different.
-	_sprite.modulate = Color.from_hsv(
+	var base = Color.from_hsv(
 		randf(),
 		0.3 + randf() * 0.4,
 		0.75 + randf() * 0.25,
 	)
+	_sprite.modulate = Color(base.r * 1.5, base.g * 1.5, base.b * 1.5)
 	_build_raycasts()
 
 

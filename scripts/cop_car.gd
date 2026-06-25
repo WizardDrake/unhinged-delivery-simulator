@@ -35,7 +35,7 @@ func _physics_process(delta: float) -> void:
 		else:
 			cruise_speed = 1800.0
 	else:
-		_sprite.modulate = Color(1, 1, 1) # Normal cop colors
+		_sprite.modulate = Color(1.5, 1.2, 1.5) # Normal cop colors
 		cruise_speed = 800.0 # Patrol speed
 		
 	# Call npc_car.gd's physics process!

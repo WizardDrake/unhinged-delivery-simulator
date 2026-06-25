@@ -17,6 +17,7 @@ var steer_direction = 0.0
 ## Which player controls this car: 1 or 2.
 ## Set by main.gd before the first physics frame.
 var player_id : int = 1
+var real_player_index : int = -1
 
 ## When true, the car ignores all input and doesn't move.
 var frozen : bool = true
@@ -42,7 +43,16 @@ var _action_right : String
 var _action_accel : String
 var _action_brake : String
 
+var _visual_rot : float = 0.0
+var _visual_root : Node2D = null
+
 func _ready() -> void:
+	_visual_rot = rotation
+	_visual_root = get_node_or_null("VisualRoot")
+	
+	if real_player_index == -1:
+		real_player_index = player_id - 1
+		
 	_action_left  = "p%d_steer_left"  % player_id
 	_action_right = "p%d_steer_right" % player_id
 	_action_accel = "p%d_accelerate"  % player_id
@@ -55,11 +65,22 @@ func _ready() -> void:
 
 	_drift_l = _create_drift_particles()
 	_drift_l.position = Vector2(-160, -45)
-	add_child(_drift_l)
+	if _visual_root:
+		_visual_root.add_child(_drift_l)
+	else:
+		add_child(_drift_l)
 	
 	_drift_r = _create_drift_particles()
 	_drift_r.position = Vector2(-160, 45)
-	add_child(_drift_r)
+	if _visual_root:
+		_visual_root.add_child(_drift_r)
+	else:
+		add_child(_drift_r)
+
+func _process(delta: float) -> void:
+	if _visual_root:
+		_visual_rot = lerp_angle(_visual_rot, rotation, 8.0 * delta)
+		_visual_root.global_rotation = _visual_rot
 
 
 func trigger_spinout() -> void:
@@ -91,7 +112,21 @@ func _physics_process(delta):
 		spinout_timer -= delta
 		rotation += 15.0 * delta
 		velocity *= 0.98
-		move_and_slide()
+		var collided := move_and_slide()
+		if collided:
+			for i in get_slide_collision_count():
+				var c = get_slide_collision(i)
+				if c.get_collider() is StaticBody2D or c.get_collider() is TileMap:
+					if transform.x.dot(velocity) >= 0:
+						var fwd = Vector2.RIGHT.rotated(rotation)
+						rotation = fwd.bounce(c.get_normal()).angle()
+					velocity = velocity.bounce(c.get_normal()) * 0.8
+					position += c.get_normal() * 10.0
+					if is_local and get_parent() != null:
+						var cam = get_parent()._cameras[real_player_index]
+						if cam != null and "add_trauma" in cam:
+							cam.add_trauma(0.4)
+					break
 		_push_npc_hits()
 		
 		# Emit particles while spinning out
@@ -105,7 +140,21 @@ func _physics_process(delta):
 	apply_friction(delta)
 	calculate_steering(delta)
 	velocity += acceleration * delta
-	move_and_slide()
+	var collided := move_and_slide()
+	if collided:
+		for i in get_slide_collision_count():
+			var c = get_slide_collision(i)
+			if c.get_collider() is StaticBody2D or c.get_collider() is TileMap:
+				if transform.x.dot(velocity) >= 0:
+					var fwd = Vector2.RIGHT.rotated(rotation)
+					rotation = fwd.bounce(c.get_normal()).angle()
+				velocity = velocity.bounce(c.get_normal()) * 0.8
+				position += c.get_normal() * 10.0
+				if is_local and get_parent() != null:
+					var cam = get_parent()._cameras[real_player_index]
+					if cam != null and "add_trauma" in cam:
+						cam.add_trauma(0.3)
+				break
 	_push_npc_hits()
 
 	var slip_cos := transform.x.dot(velocity.normalized()) if velocity.length_squared() > 1.0 else 1.0
@@ -145,8 +194,8 @@ func _create_drift_particles() -> CPUParticles2D:
 	tex.fill_from = Vector2(0.5, 0.5)
 	tex.fill_to = Vector2(0.5, 0.0)
 	var tg := Gradient.new()
-	tg.add_point(0.0, Color.WHITE)
-	tg.add_point(1.0, Color(1, 1, 1, 0.0))
+	tg.offsets = PackedFloat32Array([0.0, 1.0])
+	tg.colors = PackedColorArray([Color.WHITE, Color(1, 1, 1, 0.0)])
 	tex.gradient = tg
 	p.texture = tex
 	
@@ -154,8 +203,8 @@ func _create_drift_particles() -> CPUParticles2D:
 	p.scale_amount_max = 3.0
 	
 	var grad := Gradient.new()
-	grad.add_point(0.0, Color(0.9, 0.9, 0.9, 0.6))
-	grad.add_point(1.0, Color(0.9, 0.9, 0.9, 0.0))
+	grad.offsets = PackedFloat32Array([0.0, 1.0])
+	grad.colors = PackedColorArray([Color(0.9, 0.9, 0.9, 0.6), Color(0.9, 0.9, 0.9, 0.0)])
 	p.color_ramp = grad
 	
 	return p
@@ -172,7 +221,7 @@ func _push_npc_hits() -> void:
 						body.receive_player_hit(self, get_slide_collision(i))
 						var main_node = get_parent()
 						if main_node and main_node.has_method("report_npc_crash"):
-							main_node.report_npc_crash(player_id - 1, body.global_position)
+							main_node.report_npc_crash(real_player_index, body.global_position)
 			else:
 				hit_wall = true
 				

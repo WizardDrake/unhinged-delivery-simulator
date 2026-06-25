@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cp0r4d6qgf582"
-path="res://.godot/imported/npc_car_destroyed.png-a7d23dc7654f783ae46056e4607ccff0.ctex"
+uid="uid://0payss78mfbr"
+path="res://.godot/imported/headlight.png-e497ecffb8679bd04ac653baf9ddd7c4.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/npc_car_destroyed.png"
-dest_files=["res://.godot/imported/npc_car_destroyed.png-a7d23dc7654f783ae46056e4607ccff0.ctex"]
+source_file="res://assets/headlight.png"
+dest_files=["res://.godot/imported/headlight.png-e497ecffb8679bd04ac653baf9ddd7c4.ctex"]
 
 [params]
 

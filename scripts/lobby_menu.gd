@@ -20,7 +20,7 @@ func _ready() -> void:
 
 	# ── Dark background ──────────────────────────────────────────────────────
 	var bg := ColorRect.new()
-	bg.color = Color(0.08, 0.08, 0.12, 1.0)
+	bg.color = Color("#050505")
 	bg.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 	add_child(bg)
 
@@ -43,9 +43,9 @@ func _ready() -> void:
 
 func _build_host_ui() -> void:
 	# Title
-	var title := _label("HOST GAME", 52, Color(1.0, 0.92, 0.5))
+	var title := _label("HOST GAME", 52, Color("#fcee0a"))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	title.add_theme_color_override("font_outline_color", Color("#ff003c"))
 	title.add_theme_constant_override("outline_size", 4)
 	_vbox.add_child(title)
 
@@ -180,9 +180,9 @@ func _on_player_left(_id: int) -> void:
 
 func _build_join_ui() -> void:
 	# Title
-	var title := _label("JOIN GAME", 52, Color(1.0, 0.92, 0.5))
+	var title := _label("JOIN GAME", 52, Color("#fcee0a"))
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	title.add_theme_color_override("font_outline_color", Color("#ff003c"))
 	title.add_theme_constant_override("outline_size", 4)
 	_vbox.add_child(title)
 
@@ -410,28 +410,54 @@ func _create_slider(min_val: float, max_val: float, current: float, on_change: C
 func _make_button(label: String) -> Button:
 	var btn := Button.new()
 	btn.text = label
-	btn.custom_minimum_size = Vector2(380, 55)
-	btn.add_theme_font_size_override("font_size", 28)
+	btn.custom_minimum_size = Vector2(260, 45)
+	btn.add_theme_font_size_override("font_size", 22)
 	btn.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
-	btn.add_theme_color_override("font_hover_color", Color(1.0, 0.92, 0.5))
+	btn.add_theme_color_override("font_hover_color", Color("#ff003c"))
 	if _font != null:
 		btn.add_theme_font_override("font", _font)
 
 	var style_normal := StyleBoxFlat.new()
-	style_normal.bg_color = Color(0.15, 0.15, 0.22, 1.0)
-	style_normal.border_color = Color(0.4, 0.4, 0.55, 0.6)
+	style_normal.bg_color = Color(1.0, 0.0, 0.24, 0.1)
+	style_normal.border_color = Color("#ff003c")
 	style_normal.set_border_width_all(2)
 	style_normal.set_corner_radius_all(12)
 	style_normal.set_content_margin_all(10)
 	btn.add_theme_stylebox_override("normal", style_normal)
 
 	var style_hover := StyleBoxFlat.new()
-	style_hover.bg_color = Color(0.22, 0.22, 0.35, 1.0)
-	style_hover.border_color = Color(1.0, 0.92, 0.5, 0.8)
+	style_hover.bg_color = Color(1.0, 0.0, 0.24, 0.1)
+	style_hover.border_color = Color("#ff003c")
 	style_hover.set_border_width_all(2)
 	style_hover.set_corner_radius_all(12)
 	style_hover.set_content_margin_all(10)
 	btn.add_theme_stylebox_override("hover", style_hover)
+
+	var style_pressed := StyleBoxFlat.new()
+	style_pressed.bg_color = Color(1.0, 0.0, 0.24, 0.2)
+	style_pressed.border_color = Color("#ff003c")
+	style_pressed.set_border_width_all(3)
+	style_pressed.set_corner_radius_all(12)
+	style_pressed.set_content_margin_all(10)
+	btn.add_theme_stylebox_override("pressed", style_pressed)
+
+	btn.mouse_entered.connect(func():
+		btn.pivot_offset = btn.size / 2.0
+		var tween = btn.create_tween()
+		tween.tween_property(btn, "scale", Vector2(1.05, 1.05), 0.1)
+	)
+	btn.mouse_exited.connect(func():
+		var tween = btn.create_tween()
+		tween.tween_property(btn, "scale", Vector2(1.0, 1.0), 0.1)
+	)
+	btn.button_down.connect(func():
+		var tween = btn.create_tween()
+		tween.tween_property(btn, "scale", Vector2(0.95, 0.95), 0.05)
+	)
+	btn.button_up.connect(func():
+		var tween = btn.create_tween()
+		tween.tween_property(btn, "scale", Vector2(1.05, 1.05), 0.1).set_trans(Tween.TRANS_BOUNCE)
+	)
 
 	return btn
 

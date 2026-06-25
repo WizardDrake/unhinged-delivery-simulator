@@ -27,7 +27,7 @@ const BOX_TEXTURE_PATH   := "res://assets/box.png"
 @export var map_seed : int = 0
 
 # ── Geometry (measured from sprites at startup) ───────────────────────────────
-const HOUSE_SCALE    := 0.625  # visual scale for house sprite
+const HOUSE_SCALE    := 1.125  # visual scale for house sprite
 const CURB_OFFSET    := 500.0 # extra gap from road edge → house centre
 
 # Filled in by _measure_scenes().
@@ -101,6 +101,7 @@ var _countdown_timer : float = 3.0
 var _round_timer : float = 0.0
 var _ui_round_timers : Array[Label] = []
 var _ui_center_labels : Array[Label] = []
+var _ui_booted_labels : Array[Label] = []
 var _global_results_screen : Control
 
 # ── Per-player minimaps ───────────────────────────────────────────────────────
@@ -182,6 +183,7 @@ func _setup_split_screen() -> void:
 	_ui_scores.resize(GameSettings.player_count)
 	_ui_round_timers.resize(GameSettings.player_count)
 	_ui_center_labels.resize(GameSettings.player_count)
+	_ui_booted_labels.resize(GameSettings.player_count)
 	_ui_items.resize(GameSettings.player_count)
 	_ui_blind_screens.resize(GameSettings.player_count)
 	_ui_item_menus.resize(GameSettings.player_count)
@@ -201,8 +203,10 @@ func _setup_split_screen() -> void:
 		viewport.transparent_bg = false
 		viewport.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
 		container.add_child(viewport)
+		_add_glow_to_viewport(viewport)
 
 		var cam := Camera2D.new()
+		cam.set_script(load("res://scripts/camera_shake.gd"))
 		cam.zoom = Vector2(0.25, 0.25)
 		cam.name = "OnlineCamera"
 		viewport.add_child(cam)
@@ -246,10 +250,12 @@ func _setup_split_screen() -> void:
 			viewport2.transparent_bg = false
 			viewport2.canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
 			container2.add_child(viewport2)
+			_add_glow_to_viewport(viewport2)
 
 			var cam2 := Camera2D.new()
+			cam2.set_script(load("res://scripts/camera_shake.gd"))
 			cam2.zoom = Vector2(0.25, 0.25)
-			cam2.name = "P%dCamera" % (p + 1)
+			cam2.name = "CamPlayer" + str(p + 1)
 			viewport2.add_child(cam2)
 			_cameras.append(cam2)
 
@@ -276,6 +282,20 @@ func _setup_split_screen() -> void:
 	ui_layer.add_child(_global_results_screen)
 
 
+func _add_glow_to_viewport(vp: SubViewport) -> void:
+	vp.use_hdr_2d = true
+	var env := Environment.new()
+	env.background_mode = Environment.BG_CANVAS
+	env.glow_enabled = true
+	env.glow_intensity = 0.8
+	env.glow_strength = 0.9
+	env.glow_bloom = 0.0 # Disabled so road stripes don't bloom
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN # Screen mode reduces flickering on some GPUs like Intel HD
+	env.glow_hdr_threshold = 1.2 # slightly lower so headlights and cars bloom softly
+	var we := WorldEnvironment.new()
+	we.environment = env
+	vp.add_child(we)
+
 func _build_player_hud(player_idx: int) -> void:
 	var font = load("res://assets/Poppins-Medium.ttf") as Font
 
@@ -296,125 +316,142 @@ func _build_player_hud(player_idx: int) -> void:
 
 	var player_color : Color = _player_colors[player_idx % 4]
 	var minimap_key := "TAB"
+	
+	var s := 1.0
 	if not GameSettings.is_online:
 		minimap_key = "TAB" if player_idx == 0 else "R-CTRL"
+		if GameSettings.player_count == 2:
+			s = 0.75
+		elif GameSettings.player_count >= 3:
+			s = 0.5
 
-	# ── Top bar background ──────────────────────────────────────────────────
-	var top_bar := ColorRect.new()
-	top_bar.color = Color(0.0, 0.0, 0.0, 0.45)
-	top_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	top_bar.offset_bottom = 90
-	hud.add_child(top_bar)
-
-	var top_vbox := VBoxContainer.new()
-	top_vbox.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	top_vbox.offset_left = 12
-	top_vbox.offset_right = -12
-	top_vbox.offset_top = 6
-	top_vbox.offset_bottom = 86
-	hud.add_child(top_vbox)
-
-	# Row 1
-	var row1 := HBoxContainer.new()
-	row1.add_theme_constant_override("separation", 20)
-	top_vbox.add_child(row1)
+	# ── UI Overhaul (Modern Panels) ─────────────────────────────────────────
 	
-	# Row 2
-	var row2 := HBoxContainer.new()
-	row2.add_theme_constant_override("separation", 20)
-	top_vbox.add_child(row2)
-
-	# Player tag
+	# Top-Left Panel (Player + Score)
+	var tl_panel := PanelContainer.new()
+	var tl_style := StyleBoxFlat.new()
+	tl_style.bg_color = Color(0.05, 0.05, 0.1, 0.7)
+	tl_style.border_color = player_color
+	tl_style.set_border_width_all(int(3 * s) if int(3 * s) > 1 else 1)
+	tl_style.set_corner_radius_all(int(16 * s))
+	tl_style.set_content_margin_all(int(12 * s))
+	tl_style.shadow_color = Color(0,0,0,0.5)
+	tl_style.shadow_size = int(10 * s)
+	tl_panel.add_theme_stylebox_override("panel", tl_style)
+	tl_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	tl_panel.offset_left = int(20 * s)
+	tl_panel.offset_top = int(20 * s)
+	hud.add_child(tl_panel)
+	
+	var tl_hbox := HBoxContainer.new()
+	tl_hbox.add_theme_constant_override("separation", int(15 * s))
+	tl_panel.add_child(tl_hbox)
+	
 	var p_label := Label.new()
 	p_label.text = "P%d" % (player_idx + 1)
-	if font != null:
-		p_label.add_theme_font_override("font", font)
-	p_label.add_theme_font_size_override("font_size", 28)
+	if font != null: p_label.add_theme_font_override("font", font)
+	p_label.add_theme_font_size_override("font_size", int(32 * s))
 	p_label.add_theme_color_override("font_color", player_color)
-	p_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	p_label.add_theme_constant_override("outline_size", 4)
-	row1.add_child(p_label)
-
-	# Package icon + count
-	var pkg_label := Label.new()
-	pkg_label.text = ""
-	if font != null:
-		pkg_label.add_theme_font_override("font", font)
-	pkg_label.add_theme_font_size_override("font_size", 26)
-	pkg_label.add_theme_color_override("font_color", Color(1, 1, 1))
-	pkg_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	pkg_label.add_theme_constant_override("outline_size", 4)
-	row1.add_child(pkg_label)
-	_ui_packages[player_idx] = pkg_label
-
-	# Score icon + count
+	p_label.add_theme_color_override("font_outline_color", Color(0,0,0))
+	p_label.add_theme_constant_override("outline_size", int(6 * s))
+	tl_hbox.add_child(p_label)
+	
 	var score_label := Label.new()
 	score_label.text = ""
-	if font != null:
-		score_label.add_theme_font_override("font", font)
-	score_label.add_theme_font_size_override("font_size", 26)
-	score_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
-	score_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	score_label.add_theme_constant_override("outline_size", 4)
-	row1.add_child(score_label)
+	if font != null: score_label.add_theme_font_override("font", font)
+	score_label.add_theme_font_size_override("font_size", int(28 * s))
+	score_label.add_theme_color_override("font_color", Color("#fcee0a"))
+	tl_hbox.add_child(score_label)
 	_ui_scores[player_idx] = score_label
-
-	# Spacer
-	var spacer1 := Control.new()
-	spacer1.custom_minimum_size = Vector2(20, 0)
-	row1.add_child(spacer1)
-
-	# Item UI
-	var item_label := Label.new()
-	item_label.text = "Item: None"
-	if font != null:
-		item_label.add_theme_font_override("font", font)
-	item_label.add_theme_font_size_override("font_size", 22)
-	item_label.add_theme_color_override("font_color", Color(0.8, 0.4, 1.0))
-	item_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	item_label.add_theme_constant_override("outline_size", 4)
-	row2.add_child(item_label)
-	_ui_items[player_idx] = item_label
-
-	# Spacer
-	var spacer1_2 := Control.new()
-	spacer1_2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row1.add_child(spacer1_2)
-
-	# Round timer
+	
+	# Top-Right Panel (Timer + Packages)
+	var tr_panel := PanelContainer.new()
+	var tr_style = tl_style.duplicate()
+	tr_style.border_color = Color("#00f0ff")
+	tr_panel.add_theme_stylebox_override("panel", tr_style)
+	tr_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	tr_panel.offset_right = int(-20 * s)
+	tr_panel.offset_top = int(20 * s)
+	hud.add_child(tr_panel)
+	
+	var tr_hbox := HBoxContainer.new()
+	tr_hbox.add_theme_constant_override("separation", int(20 * s))
+	tr_panel.add_child(tr_hbox)
+	
+	var pkg_label := Label.new()
+	pkg_label.text = ""
+	if font != null: pkg_label.add_theme_font_override("font", font)
+	pkg_label.add_theme_font_size_override("font_size", int(28 * s))
+	pkg_label.add_theme_color_override("font_color", Color.WHITE)
+	tr_hbox.add_child(pkg_label)
+	_ui_packages[player_idx] = pkg_label
+	
 	var time_label := Label.new()
 	time_label.text = "0:00"
-	if font != null:
-		time_label.add_theme_font_override("font", font)
-	time_label.add_theme_font_size_override("font_size", 28)
-	time_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
-	time_label.add_theme_color_override("font_outline_color", Color(0, 0, 0))
-	time_label.add_theme_constant_override("outline_size", 4)
-	row1.add_child(time_label)
+	if font != null: time_label.add_theme_font_override("font", font)
+	time_label.add_theme_font_size_override("font_size", int(32 * s))
+	time_label.add_theme_color_override("font_color", Color("#ff003c"))
+	tr_hbox.add_child(time_label)
 	_ui_round_timers[player_idx] = time_label
 
-	# Spacer to push minimap hint to the right
-	var spacer2 := Control.new()
-	spacer2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row2.add_child(spacer2)
-
-	# Minimap key hint
+	# Bottom-Left Panel (Items & Minimap)
+	var bl_panel := PanelContainer.new()
+	var bl_style = tl_style.duplicate()
+	bl_style.border_color = Color("#ff003c")
+	bl_panel.add_theme_stylebox_override("panel", bl_style)
+	bl_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	bl_panel.offset_left = int(20 * s)
+	bl_panel.offset_bottom = int(-20 * s)
+	hud.add_child(bl_panel)
+	
+	var bl_vbox := VBoxContainer.new()
+	bl_vbox.add_theme_constant_override("separation", int(5 * s))
+	bl_panel.add_child(bl_vbox)
+	
+	var item_label := Label.new()
+	item_label.text = "Item: None"
+	if font != null: item_label.add_theme_font_override("font", font)
+	item_label.add_theme_font_size_override("font_size", int(24 * s))
+	item_label.add_theme_color_override("font_color", Color("#00f0ff"))
+	bl_vbox.add_child(item_label)
+	_ui_items[player_idx] = item_label
+	
 	var mm_hint := Label.new()
 	mm_hint.text = minimap_key + " = Map"
-	if font != null:
-		mm_hint.add_theme_font_override("font", font)
-	mm_hint.add_theme_font_size_override("font_size", 18)
-	mm_hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.4))
-	row2.add_child(mm_hint)
+	if font != null: mm_hint.add_theme_font_override("font", font)
+	mm_hint.add_theme_font_size_override("font_size", int(16 * s))
+	mm_hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
+	bl_vbox.add_child(mm_hint)
+	
+	# Booted Label (Center Screen)
+	var booted_lbl := Label.new()
+	booted_lbl.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	booted_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	booted_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	booted_lbl.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	booted_lbl.grow_vertical = Control.GROW_DIRECTION_BOTH
+	booted_lbl.offset_top = int(150 * s) # Slightly below true center
+	if font != null: booted_lbl.add_theme_font_override("font", font)
+	booted_lbl.add_theme_font_size_override("font_size", int(84 * s))
+	booted_lbl.add_theme_color_override("font_color", Color("#ff003c"))
+	booted_lbl.add_theme_color_override("font_outline_color", Color(0,0,0))
+	booted_lbl.add_theme_constant_override("outline_size", 10)
+	hud.add_child(booted_lbl)
+	_ui_booted_labels[player_idx] = booted_lbl
 
 	# ── Center screen messages (countdown) ──────────────────────────────────
 	var center_lbl := Label.new()
 	center_lbl.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	center_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	center_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	center_lbl.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	center_lbl.grow_vertical = Control.GROW_DIRECTION_BOTH
+	center_lbl.text = ""
 	if font != null:
 		center_lbl.add_theme_font_override("font", font)
-	center_lbl.add_theme_font_size_override("font_size", 120)
-	center_lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.2))
-	center_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0))
+	center_lbl.add_theme_font_size_override("font_size", int(120 * s))
+	center_lbl.add_theme_color_override("font_color", Color("#fcee0a"))
+	center_lbl.add_theme_color_override("font_outline_color", Color("#ff003c"))
 	center_lbl.add_theme_constant_override("outline_size", 8)
 	hud.add_child(center_lbl)
 	_ui_center_labels[player_idx] = center_lbl
@@ -528,7 +565,7 @@ func _process(delta: float) -> void:
 			if _boot_timers[p] <= 0.0 and _cars[p] != null:
 				if _game_state == "playing":
 					_cars[p].frozen = false
-				_update_ui(p)
+			_update_ui(p)
 
 		if _cop_cooldown[p] > 0.0:
 			_cop_cooldown[p] -= delta
@@ -939,7 +976,7 @@ func _rpc_set_wanted(player_idx: int, wanted: bool) -> void:
 func boot_player(player_node: Node2D) -> void:
 	var idx = _cars.find(player_node)
 	if idx >= 0:
-		_boot_timers[idx] = 15.0
+		_boot_timers[idx] = 10.0
 		_player_wanted[idx] = false
 		if GameSettings.is_online:
 			_rpc_set_wanted.rpc(idx, false)
@@ -950,7 +987,7 @@ func boot_player(player_node: Node2D) -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_boot_player(player_idx: int) -> void:
 	if player_idx >= 0 and player_idx < _boot_timers.size():
-		_boot_timers[player_idx] = 15.0
+		_boot_timers[player_idx] = 10.0
 		_player_wanted[player_idx] = false
 		_update_ui(player_idx)
 
@@ -1103,8 +1140,13 @@ func _update_ui(player_idx: int) -> void:
 	if player_idx < _ui_items.size() and _ui_items[player_idx] != null:
 		var item_name = ITEM_NAMES[_player_selected_item[player_idx]]
 		if _boot_timers[player_idx] > 0.0:
-			_ui_items[player_idx].text = "BOOTED! %ds" % int(ceil(_boot_timers[player_idx]))
-		elif not _player_item_locked[player_idx]:
+			if player_idx < _ui_booted_labels.size() and _ui_booted_labels[player_idx] != null:
+				_ui_booted_labels[player_idx].text = "BOOTED! %ds" % int(ceil(_boot_timers[player_idx]))
+		else:
+			if player_idx < _ui_booted_labels.size() and _ui_booted_labels[player_idx] != null:
+				_ui_booted_labels[player_idx].text = ""
+
+		if not _player_item_locked[player_idx]:
 			var is_shopping = (_ui_item_menus[player_idx] != null and _ui_item_menus[player_idx].visible)
 			if is_shopping:
 				_ui_items[player_idx].text = "Select Item: " + item_name + " (Space: Confirm)"
@@ -1407,10 +1449,18 @@ func _place_curb_houses_v(tex: Texture2D, x: float, y0: float, y1: float, facing
 
 func _spawn_house(tex: Texture2D, pos: Vector2, angle: float) -> void:
 	var sprite := Sprite2D.new()
-	sprite.texture = tex
 	sprite.scale   = Vector2(HOUSE_SCALE, HOUSE_SCALE)
-	sprite.rotation = angle
+	
+	# The original texture is drawn facing down (+Y). So we add PI to flip it to face the road.
+	var final_angle = angle + PI
+	
+	# Flip the texture horizontally on the North and West sides to keep the porch visually on the same side
+	if angle > 0.1:
+		sprite.flip_h = true
+		
+	sprite.rotation = final_angle
 	sprite.position = pos
+	sprite.texture = tex
 	add_child(sprite)
 
 	_houses.append(sprite)
@@ -1441,6 +1491,7 @@ func _spawn_car_for_player(player_id: int) -> Node2D:
 
 	# Set the player_id so the car reads the right input actions
 	car.player_id = player_id
+	car.real_player_index = player_id - 1
 
 	# In online mode, only the local player's car accepts input
 	if GameSettings.is_online:
@@ -1453,8 +1504,8 @@ func _spawn_car_for_player(player_id: int) -> Node2D:
 	# Spawn equally close to the post office, parked on the road in front of it
 	if _post_office != null:
 		var po_pos := _post_office.global_position
-		# The house's local -Y axis points toward the road (distance is ~1258 units)
-		var house_fwd := Vector2.UP.rotated(_post_office.rotation)
+		# The house's local +Y axis points toward the road (since we rotated the house by PI)
+		var house_fwd := Vector2.DOWN.rotated(_post_office.rotation)
 		var road_center := po_pos + house_fwd * 1258.0
 		
 		# Offset cars sideways along the road
@@ -1469,10 +1520,21 @@ func _spawn_car_for_player(player_id: int) -> Node2D:
 		car.position = Vector2.ZERO
 		car.rotation = 0.0
 
-	# Player-specific color tinting
+	# Create VisualRoot for smooth swiveling
+	var vis_root = Node2D.new()
+	vis_root.name = "VisualRoot"
+	car.add_child(vis_root)
+
+	# Player-specific color tinting (multiplied to make it glow with HDR)
 	var sprite = car.get_node_or_null("Sprite2D")
 	if sprite != null:
-		sprite.modulate = _player_colors[(player_id - 1) % 4]
+		var c = _player_colors[(player_id - 1) % 4]
+		sprite.modulate = Color(c.r * 1.5, c.g * 1.5, c.b * 1.5)
+		car.remove_child(sprite)
+		vis_root.add_child(sprite)
+
+	# Add headlights to the car
+	_attach_headlights(car)
 
 	# Remove the Camera2D from the car scene — we use our own SubViewport cameras
 	var car_cam = car.get_node_or_null("Camera2D")
@@ -1505,6 +1567,12 @@ func _spawn_npcs() -> void:
 		var seg: Vector2 = (path[next_idx] - path[start_idx]).normalized()
 		if seg.length_squared() > 0.01:
 			npc.position += seg * _rng.randf_range(300.0, 1200.0)
+			
+		var sprite = npc.get_node_or_null("Sprite2D")
+		if sprite != null:
+			var c = _player_colors[1] # Player 2 color
+			sprite.modulate = Color(c.r * 1.5, c.g * 1.5, c.b * 1.5)
+			
 		_npcs.append(npc)
 
 
@@ -1522,6 +1590,12 @@ func _spawn_one_npc() -> void:
 	var dir: Vector2 = (path[next_idx] - path[start_idx]).normalized()
 	if dir.length_squared() > 0.01:
 		npc.rotation = dir.angle() + PI * 0.5
+		
+	var sprite = npc.get_node_or_null("Sprite2D")
+	if sprite != null:
+		var c = _player_colors[1] # Player 2 color
+		sprite.modulate = Color(c.r * 1.5, c.g * 1.5, c.b * 1.5)
+		
 	_npcs.append(npc)
 
 
@@ -1540,69 +1614,44 @@ func _spawn_one_cop() -> void:
 	var dir: Vector2 = (path[next_idx] - path[start_idx]).normalized()
 	if dir.length_squared() > 0.01:
 		cop.rotation = dir.angle() + PI * 0.5
+		
+	var sprite = cop.get_node_or_null("Sprite2D")
+	if sprite != null:
+		# Make cop cars glow red/blue intensely
+		sprite.modulate = Color(1.5, 1.2, 1.5)
+		
+	_attach_headlights(cop)
 	_cops.append(cop)
+
+
+func _attach_headlights(car_node: Node2D) -> void:
+	var target = car_node.get_node_or_null("VisualRoot")
+	if target == null:
+		target = car_node
+		
+	for y_offset in [-35, 35]:
+		var light = PointLight2D.new()
+		var tex = preload("res://assets/headlight.png")
+		light.texture = tex
+		light.offset = Vector2(256, 0)
+		light.energy = 1.0
+		light.scale = Vector2(2.5, 2.5)
+		light.position = Vector2(240, y_offset) # Moved to the very front bumper
+		target.add_child(light)
 
 
 # ── Grass background ──────────────────────────────────────────────────────────
 
 func _spawn_grass_bg() -> void:
-	var tex : Texture2D = load("res://assets/grass_4x4.png")
-	if tex == null:
-		push_error("Could not load grass texture")
-		return
-
-	const TILE_SCALE := 15.0
 	var pad     := _cell_size            # one extra cell of padding on every edge
 	var total_w := grid_cols * _cell_size + pad * 2.0
 	var total_h := grid_rows * _cell_size + pad * 2.0
 
-	var shader = Shader.new()
-	shader.code = """
-shader_type canvas_item;
-
-uniform sampler2D grass_tex : filter_nearest, repeat_enable;
-uniform vec2 tile_scale;
-
-float rand(vec2 co){
-    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
-}
-
-void fragment() {
-    vec2 world_pos = UV * tile_scale;
-    vec2 tile_id = floor(world_pos);
-    float r = rand(tile_id);
-    
-    int rot = int(r * 4.0);
-    vec2 local_uv = fract(world_pos);
-    
-    if (rot == 1) {
-        local_uv = vec2(local_uv.y, 1.0 - local_uv.x);
-    } else if (rot == 2) {
-        local_uv = vec2(1.0 - local_uv.x, 1.0 - local_uv.y);
-    } else if (rot == 3) {
-        local_uv = vec2(1.0 - local_uv.y, local_uv.x);
-    }
-    
-    vec4 tex_color = texture(grass_tex, local_uv);
-    
-    // Different random shade of green per tile
-    float shade = 0.7 + rand(tile_id + vec2(1.0, 1.0)) * 0.4;
-    vec3 color_mod = vec3(0.85 * shade, 1.15 * shade, 0.75 * shade);
-    
-    COLOR = vec4(tex_color.rgb * color_mod, tex_color.a);
-}
-"""
-	var mat = ShaderMaterial.new()
-	mat.shader = shader
-	mat.set_shader_parameter("grass_tex", tex)
-	mat.set_shader_parameter("tile_scale", Vector2(total_w / (4.0 * TILE_SCALE), total_h / (4.0 * TILE_SCALE)))
-
 	var bg = ColorRect.new()
-	bg.material = mat
+	bg.color = Color(0.05, 0.05, 0.05) # Pure dark Cyberpunk background
 	bg.position = Vector2(-total_w * 0.5, -total_h * 0.5)
 	bg.size = Vector2(total_w, total_h)
 	bg.z_index = -100
-	
 	add_child(bg)
 	move_child(bg, 0)
 

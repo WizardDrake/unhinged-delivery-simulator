@@ -7,7 +7,7 @@ var _btn_exit  : Button
 func _ready() -> void:
 	# ── Dark background ──────────────────────────────────────────────────────
 	var bg := ColorRect.new()
-	bg.color = Color(0.08, 0.08, 0.12, 1.0)
+	bg.color = Color("#050505")
 	bg.set_anchors_preset(PRESET_FULL_RECT)
 	add_child(bg)
 
@@ -25,8 +25,8 @@ func _ready() -> void:
 	title.text = "UNHINGED DELIVERY\nSIMULATOR"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 82)
-	title.add_theme_color_override("font_color", Color(1.0, 0.92, 0.5))
-	title.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0))
+	title.add_theme_color_override("font_color", Color("#fcee0a"))
+	title.add_theme_color_override("font_outline_color", Color("#ff003c"))
 	title.add_theme_constant_override("outline_size", 6)
 	if font != null:
 		title.add_theme_font_override("font", font)
@@ -37,7 +37,7 @@ func _ready() -> void:
 	subtitle.text = "deliver packages. cause chaos."
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	subtitle.add_theme_font_size_override("font_size", 28)
-	subtitle.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8, 0.7))
+	subtitle.add_theme_color_override("font_color", Color("#00f0ff"))
 	if font != null:
 		subtitle.add_theme_font_override("font", font)
 	vbox.add_child(subtitle)
@@ -52,17 +52,18 @@ func _ready() -> void:
 	_btn_local.pressed.connect(_on_local_multiplayer)
 	vbox.add_child(_btn_local)
 
-	var btn_host := _make_button("HOST ONLINE", font)
-	btn_host.pressed.connect(_on_host_online)
-	vbox.add_child(btn_host)
+	if not OS.has_feature("web"):
+		var btn_host := _make_button("HOST ONLINE", font)
+		btn_host.pressed.connect(_on_host_online)
+		vbox.add_child(btn_host)
 
-	var btn_join := _make_button("JOIN ONLINE", font)
-	btn_join.pressed.connect(_on_join_online)
-	vbox.add_child(btn_join)
+		var btn_join := _make_button("JOIN ONLINE", font)
+		btn_join.pressed.connect(_on_join_online)
+		vbox.add_child(btn_join)
 
-	_btn_exit = _make_button("EXIT", font)
-	_btn_exit.pressed.connect(_on_exit)
-	vbox.add_child(_btn_exit)
+		_btn_exit = _make_button("EXIT", font)
+		_btn_exit.pressed.connect(_on_exit)
+		vbox.add_child(_btn_exit)
 
 	# ── Controls hint ────────────────────────────────────────────────────────
 	var spacer2 := Control.new()
@@ -82,37 +83,55 @@ func _ready() -> void:
 func _make_button(label: String, font: Font) -> Button:
 	var btn := Button.new()
 	btn.text = label
-	btn.custom_minimum_size = Vector2(420, 70)
-	btn.add_theme_font_size_override("font_size", 36)
+	btn.custom_minimum_size = Vector2(280, 50)
+	btn.add_theme_font_size_override("font_size", 24)
 	btn.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
-	btn.add_theme_color_override("font_hover_color", Color(1.0, 0.92, 0.5))
+	btn.add_theme_color_override("font_hover_color", Color("#ff003c"))
 
-	# Style: normal
+	# Style: normal (now uses hover colors always)
 	var style_normal := StyleBoxFlat.new()
-	style_normal.bg_color = Color(0.15, 0.15, 0.22, 1.0)
-	style_normal.border_color = Color(0.4, 0.4, 0.55, 0.6)
+	style_normal.bg_color = Color(1.0, 0.0, 0.24, 0.1) # tinted red
+	style_normal.border_color = Color("#ff003c")
 	style_normal.set_border_width_all(2)
 	style_normal.set_corner_radius_all(12)
-	style_normal.set_content_margin_all(16)
+	style_normal.set_content_margin_all(10)
 	btn.add_theme_stylebox_override("normal", style_normal)
 
-	# Style: hover
+	# Style: hover (same as normal)
 	var style_hover := StyleBoxFlat.new()
-	style_hover.bg_color = Color(0.22, 0.22, 0.35, 1.0)
-	style_hover.border_color = Color(1.0, 0.92, 0.5, 0.8)
+	style_hover.bg_color = Color(1.0, 0.0, 0.24, 0.1) # tinted red
+	style_hover.border_color = Color("#ff003c")
 	style_hover.set_border_width_all(2)
 	style_hover.set_corner_radius_all(12)
-	style_hover.set_content_margin_all(16)
+	style_hover.set_content_margin_all(10)
 	btn.add_theme_stylebox_override("hover", style_hover)
 
 	# Style: pressed
 	var style_pressed := StyleBoxFlat.new()
-	style_pressed.bg_color = Color(0.12, 0.12, 0.18, 1.0)
-	style_pressed.border_color = Color(1.0, 0.92, 0.5, 1.0)
+	style_pressed.bg_color = Color(1.0, 0.0, 0.24, 0.2)
+	style_pressed.border_color = Color("#ff003c")
 	style_pressed.set_border_width_all(3)
 	style_pressed.set_corner_radius_all(12)
-	style_pressed.set_content_margin_all(16)
+	style_pressed.set_content_margin_all(10)
 	btn.add_theme_stylebox_override("pressed", style_pressed)
+
+	btn.mouse_entered.connect(func():
+		btn.pivot_offset = btn.size / 2.0
+		var tween = btn.create_tween()
+		tween.tween_property(btn, "scale", Vector2(1.05, 1.05), 0.1)
+	)
+	btn.mouse_exited.connect(func():
+		var tween = btn.create_tween()
+		tween.tween_property(btn, "scale", Vector2(1.0, 1.0), 0.1)
+	)
+	btn.button_down.connect(func():
+		var tween = btn.create_tween()
+		tween.tween_property(btn, "scale", Vector2(0.95, 0.95), 0.05)
+	)
+	btn.button_up.connect(func():
+		var tween = btn.create_tween()
+		tween.tween_property(btn, "scale", Vector2(1.05, 1.05), 0.1).set_trans(Tween.TRANS_BOUNCE)
+	)
 
 	if font != null:
 		btn.add_theme_font_override("font", font)
