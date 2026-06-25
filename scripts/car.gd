@@ -112,20 +112,15 @@ func _physics_process(delta):
 		spinout_timer -= delta
 		rotation += 15.0 * delta
 		velocity *= 0.98
+		var pre_velocity := velocity
 		var collided := move_and_slide()
 		if collided:
 			for i in get_slide_collision_count():
 				var c = get_slide_collision(i)
 				if c.get_collider() is StaticBody2D or c.get_collider() is TileMap:
-					if transform.x.dot(velocity) >= 0:
-						var fwd = Vector2.RIGHT.rotated(rotation)
-						rotation = fwd.bounce(c.get_normal()).angle()
-					velocity = velocity.bounce(c.get_normal()) * 0.8
-					position += c.get_normal() * 10.0
-					if is_local and get_parent() != null:
-						var cam = get_parent()._cameras[real_player_index]
-						if cam != null and "add_trauma" in cam:
-							cam.add_trauma(0.4)
+					var impact := pre_velocity.project(c.get_normal()).length()
+					if impact > 200.0 and is_local and get_parent() != null and get_parent().has_method("add_trauma"):
+						get_parent().add_trauma(real_player_index, minf(impact / 1000.0, 0.4))
 					break
 		_push_npc_hits()
 		
@@ -140,20 +135,15 @@ func _physics_process(delta):
 	apply_friction(delta)
 	calculate_steering(delta)
 	velocity += acceleration * delta
+	var pre_velocity := velocity
 	var collided := move_and_slide()
 	if collided:
 		for i in get_slide_collision_count():
 			var c = get_slide_collision(i)
 			if c.get_collider() is StaticBody2D or c.get_collider() is TileMap:
-				if transform.x.dot(velocity) >= 0:
-					var fwd = Vector2.RIGHT.rotated(rotation)
-					rotation = fwd.bounce(c.get_normal()).angle()
-				velocity = velocity.bounce(c.get_normal()) * 0.8
-				position += c.get_normal() * 10.0
-				if is_local and get_parent() != null:
-					var cam = get_parent()._cameras[real_player_index]
-					if cam != null and "add_trauma" in cam:
-						cam.add_trauma(0.3)
+				var impact := pre_velocity.project(c.get_normal()).length()
+				if impact > 200.0 and is_local and get_parent() != null and get_parent().has_method("add_trauma"):
+					get_parent().add_trauma(real_player_index, minf(impact / 1000.0, 0.4))
 				break
 	_push_npc_hits()
 

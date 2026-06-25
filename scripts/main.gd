@@ -58,6 +58,14 @@ var _ui_items : Array[Label] = []
 var _ui_blind_screens : Array[ColorRect] = []
 var _ui_item_menus : Array[PanelContainer] = []
 var _ui_blind_particles : Array[CPUParticles2D] = []
+
+# Upgrades
+var _player_tracker_level : Array[int] = []
+var _player_storage_level : Array[int] = []
+var _player_nitro_level : Array[int] = []
+var _player_last_upgrade_score : Array[int] = []
+var _ui_upgrade_menus : Array[PanelContainer] = []
+var _player_selected_upgrade : Array[int] = []
 var _blind_timers : Array[float] = []
 var _player_selected_item : Array[int] = []
 var _player_item_locked : Array[bool] = []
@@ -129,12 +137,18 @@ func _ready() -> void:
 		_player_has_item.append(false)
 		_player_item_cooldown.append(0.0)
 		_blind_timers.append(0.0)
+		_ui_booted_labels.append(null)
 		_player_selected_item.append(0)
 		_player_item_locked.append(false)
 		_boot_timers.append(0.0)
 		_cop_cooldown.append(0.0)
 		_camera_trauma.append(0.0)
 		_player_wanted.append(false)
+		_player_tracker_level.append(0)
+		_player_storage_level.append(0)
+		_player_nitro_level.append(0)
+		_player_last_upgrade_score.append(0)
+		_player_selected_upgrade.append(0)
 
 	# ── Network mode setup ───────────────────────────────────────────────────
 	if GameSettings.is_online:
@@ -150,9 +164,10 @@ func _ready() -> void:
 
 	_measure_scenes()
 	_setup_split_screen()
-	_spawn_grass_bg()       # must be first child so it draws behind everything
+	_spawn_grass_bg()
 	_init_segment_arrays()
 	_prune_dead_ends()
+	_build_astar()
 	_traffic_paths = RoadPathGeneratorScript.generate_paths(self, _rng, 14)
 	_place_roads()
 	_place_houses()
@@ -188,6 +203,7 @@ func _setup_split_screen() -> void:
 	_ui_blind_screens.resize(GameSettings.player_count)
 	_ui_item_menus.resize(GameSettings.player_count)
 	_ui_blind_particles.resize(GameSettings.player_count)
+	_ui_upgrade_menus.resize(GameSettings.player_count)
 
 	if GameSettings.is_online:
 		# ── Online mode: single fullscreen viewport ─────────────────────────
@@ -539,9 +555,61 @@ func _build_player_hud(player_idx: int) -> void:
 	item_menu.add_child(vbox)
 	hud.add_child(item_menu)
 	_ui_item_menus[player_idx] = item_menu
+	
+	# ── Upgrade Menu ───────────────────────────────────────────────
+	var upgrade_menu := PanelContainer.new()
+	upgrade_menu.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	upgrade_menu.visible = false
+	
+	var up_style = StyleBoxFlat.new()
+	up_style.bg_color = Color(0.1, 0.1, 0.3, 0.95)
+	up_style.border_width_left = 6
+	up_style.border_width_right = 6
+	up_style.border_width_top = 6
+	up_style.border_width_bottom = 6
+	up_style.border_color = Color(0.2, 0.8, 1.0)
+	upgrade_menu.add_theme_stylebox_override("panel", up_style)
+	
+	var up_vbox := VBoxContainer.new()
+	up_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	up_vbox.add_theme_constant_override("separation", int(15 * s))
+	
+	var up_title := Label.new()
+	up_title.text = "10 DELIVERIES! CHOOSE UPGRADE\n(Steer: Select, Space: Confirm)"
+	if not GameSettings.is_online and player_idx == 1:
+		up_title.text = "10 DELIVERIES! CHOOSE UPGRADE\n(Steer: Select, /: Confirm)"
+	if font != null: up_title.add_theme_font_override("font", font)
+	up_title.add_theme_font_size_override("font_size", int(32 * s))
+	up_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	up_vbox.add_child(up_title)
+	
+	var up_options_vbox := VBoxContainer.new()
+	upgrade_menu.set_meta("options", up_options_vbox)
+	for i in range(3):
+		var lbl := Label.new()
+		if font != null: lbl.add_theme_font_override("font", font)
+		lbl.add_theme_font_size_override("font_size", int(40 * s))
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		up_options_vbox.add_child(lbl)
+		
+	up_vbox.add_child(up_options_vbox)
+	upgrade_menu.add_child(up_vbox)
+	hud.add_child(upgrade_menu)
+	_ui_upgrade_menus[player_idx] = upgrade_menu
 
 
+var _debug_t_pressed := false
 func _process(delta: float) -> void:
+	var t_pressed = Input.is_key_pressed(KEY_T)
+	if t_pressed and not _debug_t_pressed:
+		_player_scores[_local_player_idx] += 1
+		var current_tier = _player_scores[_local_player_idx] / 10
+		if current_tier > _player_last_upgrade_score[_local_player_idx]:
+			_player_last_upgrade_score[_local_player_idx] = current_tier
+			_show_upgrade_menu(_local_player_idx)
+		_update_ui(_local_player_idx)
+	_debug_t_pressed = t_pressed
+	
 	_process_game_state(delta)
 
 	# Process blind timers
@@ -600,8 +668,8 @@ func _process(delta: float) -> void:
 			var cam_pos = _cars[p].global_position
 			if p < _camera_trauma.size() and _camera_trauma[p] > 0.0:
 				var trauma_sq = _camera_trauma[p] * _camera_trauma[p]
-				cam_pos += Vector2(randf_range(-1, 1), randf_range(-1, 1)) * trauma_sq * 50.0
-				_camera_trauma[p] = maxf(0.0, _camera_trauma[p] - delta * 0.5)
+				cam_pos += Vector2(randf_range(-1, 1), randf_range(-1, 1)) * trauma_sq * 20.0
+				_camera_trauma[p] = maxf(0.0, _camera_trauma[p] - delta * 1.5)
 			_cameras[p].global_position = cam_pos
 
 	# ── Network car sync ────────────────────────────────────────────────────
@@ -669,6 +737,19 @@ func _process(delta: float) -> void:
 		var shop_action = "p1_shop" if GameSettings.is_online else "p%d_shop" % (p + 1)
 		var right_action = "p1_steer_right" if GameSettings.is_online else "p%d_steer_right" % (p + 1)
 		var left_action = "p1_steer_left" if GameSettings.is_online else "p%d_steer_left" % (p + 1)
+		
+		var is_upgrading = (_ui_upgrade_menus[p] != null and _ui_upgrade_menus[p].visible)
+		
+		if is_upgrading:
+			if Input.is_action_just_pressed(shop_action):
+				_apply_upgrade(p, _player_selected_upgrade[p])
+			elif Input.is_action_just_pressed(right_action):
+				_player_selected_upgrade[p] = (_player_selected_upgrade[p] + 1) % 3
+				_update_upgrade_ui(p)
+			elif Input.is_action_just_pressed(left_action):
+				_player_selected_upgrade[p] = (_player_selected_upgrade[p] - 1 + 3) % 3
+				_update_upgrade_ui(p)
+			continue
 
 		if Input.is_action_just_pressed(shop_action):
 			if at_po and not _player_item_locked[p] and _player_scores[p] >= 5:
@@ -707,7 +788,7 @@ func _process(delta: float) -> void:
 		# Check Post Office (pickup — no box thrown)
 		if _post_office != null and _player_packages[p] == 0 and speed < 400.0:
 			if car_pos.distance_to(_post_office.global_position) < 2000.0:
-				_player_packages[p] = 5
+				_player_packages[p] = 5 + _player_storage_level[p] * 5
 				_assign_random_deliveries(p)
 				_update_ui(p)
 				if GameSettings.is_online:
@@ -976,7 +1057,7 @@ func _rpc_set_wanted(player_idx: int, wanted: bool) -> void:
 func boot_player(player_node: Node2D) -> void:
 	var idx = _cars.find(player_node)
 	if idx >= 0:
-		_boot_timers[idx] = 10.0
+		_boot_timers[idx] = 5.0
 		_player_wanted[idx] = false
 		if GameSettings.is_online:
 			_rpc_set_wanted.rpc(idx, false)
@@ -987,7 +1068,7 @@ func boot_player(player_node: Node2D) -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_boot_player(player_idx: int) -> void:
 	if player_idx >= 0 and player_idx < _boot_timers.size():
-		_boot_timers[player_idx] = 10.0
+		_boot_timers[player_idx] = 5.0
 		_player_wanted[player_idx] = false
 		_update_ui(player_idx)
 
@@ -1010,7 +1091,7 @@ func _assign_random_deliveries(player_idx: int) -> void:
 	var other_targets : Array = _player_targets[other]
 
 	for h in available:
-		if _player_targets[player_idx].size() >= 5:
+		if _player_targets[player_idx].size() >= 5 + _player_storage_level[player_idx] * 5:
 			break
 
 		if h in other_targets:
@@ -1092,6 +1173,13 @@ func _update_thrown_boxes(delta: float) -> void:
 					bounce_dir = Vector2.UP
 				b["bounce_end"] = sprite.position + bounce_dir * BOX_BOUNCE_DIST
 				_player_scores[pidx] += 1
+				
+				# Upgrade Menu check
+				var current_tier = _player_scores[pidx] / 10
+				if current_tier > _player_last_upgrade_score[pidx]:
+					_player_last_upgrade_score[pidx] = current_tier
+					_show_upgrade_menu(pidx)
+				
 				_update_ui(pidx)
 				
 				if GameSettings.is_online and pidx == _local_player_idx:
@@ -1127,6 +1215,56 @@ func _update_thrown_boxes(delta: float) -> void:
 	# Remove finished boxes (iterate in reverse to keep indices valid)
 	for i in range(to_remove.size() - 1, -1, -1):
 		_thrown_boxes.remove_at(to_remove[i])
+
+
+func add_trauma(player_idx: int, amount: float) -> void:
+	if player_idx < _camera_trauma.size():
+		_camera_trauma[player_idx] = minf(1.0, _camera_trauma[player_idx] + amount)
+
+func _show_upgrade_menu(pidx: int) -> void:
+	if _cars[pidx] != null:
+		_cars[pidx].frozen = true
+	_player_selected_upgrade[pidx] = 0
+	_ui_upgrade_menus[pidx].visible = true
+	_update_upgrade_ui(pidx)
+
+func _update_upgrade_ui(pidx: int) -> void:
+	var options = _ui_upgrade_menus[pidx].get_meta("options")
+	var t_lvl = _player_tracker_level[pidx]
+	var s_lvl = _player_storage_level[pidx]
+	var n_lvl = _player_nitro_level[pidx]
+	
+	var labels = options.get_children()
+	
+	var t_txt = "Tracker Lvl " + str(t_lvl+1) + " "
+	if t_lvl == 0: t_txt += "(See Police)"
+	elif t_lvl == 1: t_txt += "(See NPCs)"
+	else: t_txt += "(GPS Route)"
+	
+	labels[0].text = t_txt
+	labels[1].text = "Storage Lvl " + str(s_lvl+1) + " (+5 Pkgs)"
+	labels[2].text = "Nitro Lvl " + str(n_lvl+1) + " (Speed Up)"
+	
+	for i in range(3):
+		if i == _player_selected_upgrade[pidx]:
+			labels[i].add_theme_color_override("font_color", Color(1, 1, 0))
+			labels[i].text = "> " + labels[i].text + " <"
+		else:
+			labels[i].add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+
+func _apply_upgrade(pidx: int, choice: int) -> void:
+	if choice == 0:
+		_player_tracker_level[pidx] += 1
+	elif choice == 1:
+		_player_storage_level[pidx] += 1
+	elif choice == 2:
+		_player_nitro_level[pidx] += 1
+		if _cars[pidx] != null:
+			_cars[pidx].engine_power += 300
+			
+	_ui_upgrade_menus[pidx].visible = false
+	if _cars[pidx] != null:
+		_cars[pidx].frozen = false
 
 
 func _update_ui(player_idx: int) -> void:
@@ -1291,7 +1429,36 @@ func _prune_dead_ends() -> void:
 				changed = true
 
 
-# ── Road placement ────────────────────────────────────────────────────────────
+var _astar : AStar2D = null
+
+func _build_astar() -> void:
+	_astar = AStar2D.new()
+	for r in range(grid_rows + 1):
+		for c in range(grid_cols + 1):
+			var id = r * (grid_cols + 1) + c
+			_astar.add_point(id, _world_pos(float(c), float(r)))
+			
+	for r in range(grid_rows + 1):
+		for c in range(grid_cols):
+			if _h_segs[r][c]:
+				var id1 = r * (grid_cols + 1) + c
+				var id2 = r * (grid_cols + 1) + (c + 1)
+				_astar.connect_points(id1, id2)
+				
+	for r in range(grid_rows):
+		for c in range(grid_cols + 1):
+			if _v_segs[r][c]:
+				var id1 = r * (grid_cols + 1) + c
+				var id2 = (r + 1) * (grid_cols + 1) + c
+				_astar.connect_points(id1, id2)
+
+func get_path_to_player(from_pos: Vector2, to_pos: Vector2) -> PackedVector2Array:
+	if _astar == null: return PackedVector2Array()
+	var start_id = _astar.get_closest_point(from_pos)
+	var end_id = _astar.get_closest_point(to_pos)
+	return _astar.get_point_path(start_id, end_id)
+
+# ── Intersections ────────────────────────────────────────────────────────────
 
 func _place_roads() -> void:
 	for r in range(grid_rows + 1):
@@ -1773,6 +1940,7 @@ class _MinimapDraw extends Control:
 			var cw : Vector2 = h.position + half_world
 			var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
 			draw_rect(Rect2(cp - Vector2(4, 4), Vector2(8, 8)), my_color)
+			draw_rect(Rect2(cp - Vector2(4, 4), Vector2(8, 8)), Color.BLACK, false, 1.0)
 
 		# ── Post office ──────────────────────────────────────────────────────
 		if m._post_office != null:
@@ -1780,6 +1948,32 @@ class _MinimapDraw extends Control:
 			var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
 			draw_rect(Rect2(cp - Vector2(5, 5), Vector2(10, 10)), Color(0.2, 0.4, 1.0, 1.0))
 			draw_rect(Rect2(cp - Vector2(5, 5), Vector2(10, 10)), Color(1, 1, 1, 1), false, 1.0)
+			
+		# ── Tracker Upgrades ─────────────────────────────────────────────────
+		var tracker_lvl = m._player_tracker_level[player_idx]
+		if tracker_lvl >= 1:
+			for cop in m._cops:
+				if cop == null: continue
+				var cw : Vector2 = cop.position + half_world
+				var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
+				draw_circle(cp, 3.0, Color.RED)
+				draw_circle(cp, 3.0, Color.BLACK, false, 1.0)
+		if tracker_lvl >= 2:
+			for npc in m._npcs:
+				if npc == null: continue
+				var cw : Vector2 = npc.position + half_world
+				var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
+				draw_circle(cp, 2.0, Color(0.8, 0.5, 0.0))
+				draw_circle(cp, 2.0, Color.BLACK, false, 1.0)
+		if tracker_lvl >= 3:
+			if m._cars[player_idx] != null:
+				var car_pos = m._cars[player_idx].position
+				for h in my_targets:
+					var cw : Vector2 = h.position + half_world
+					var cp := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
+					var car_w = car_pos + half_world
+					var car_p := origin + Vector2(car_w.x * scale_v.x, car_w.y * scale_v.y)
+					draw_line(car_p, cp, my_color, 1.0)
 
 		# ── Car dots (all players) ──────────────────────────────────────────
 		for p in range(m._cars.size()):
@@ -1791,8 +1985,9 @@ class _MinimapDraw extends Control:
 			var cp  := origin + Vector2(cw.x * scale_v.x, cw.y * scale_v.y)
 			var dot_size := 7.0 if p == player_idx else 4.0
 			draw_circle(cp, dot_size, c_color)
+			draw_circle(cp, dot_size, Color.BLACK, false, 1.0)
 			if p == player_idx:
-				draw_circle(cp, dot_size, Color(1.0, 1.0, 1.0, 0.7), false, 1.5)
+				draw_circle(cp, dot_size + 1.0, Color(1.0, 1.0, 1.0, 0.7), false, 1.5)
 
 		# ── Label ────────────────────────────────────────────────────────────
 		var label_text := "P%d MAP" % (player_idx + 1)

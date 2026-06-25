@@ -6,6 +6,9 @@ var target_player : Node2D = null
 var siren_timer := 0.0
 var siren_state := false
 
+var _chase_path : PackedVector2Array = []
+var _path_update_timer := 0.0
+
 func _ready() -> void:
 	# _ready from npc_car.gd runs first, so we just setup our specifics
 	if has_node("BootArea"):
@@ -26,6 +29,12 @@ func _physics_process(delta: float) -> void:
 			else:
 				_sprite.modulate = Color(0.5, 0.5, 2.0)
 				
+		_path_update_timer -= delta
+		if _path_update_timer <= 0.0:
+			_path_update_timer = 0.5
+			if graph_ref != null and graph_ref.has_method("get_path_to_player"):
+				_chase_path = graph_ref.get_path_to_player(global_position, target_player.global_position)
+				
 		# Catchup mechanic
 		var dist = global_position.distance_to(target_player.global_position)
 		if dist > 1500.0:
@@ -43,6 +52,12 @@ func _physics_process(delta: float) -> void:
 
 func _current_target() -> Vector2:
 	if target_player != null and is_instance_valid(target_player):
+		if _chase_path.size() >= 2:
+			var target = _chase_path[1]
+			if global_position.distance_to(target) < 600.0 and _chase_path.size() > 2:
+				target = _chase_path[2]
+			return target
+			
 		var lead = target_player.global_position
 		if "velocity" in target_player:
 			lead += target_player.velocity * 0.5
