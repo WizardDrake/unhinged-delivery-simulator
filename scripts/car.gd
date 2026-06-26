@@ -8,6 +8,7 @@ var drag = -0.009
 var braking = -1350
 var max_speed_reverse = 600
 var slip_speed = 400
+var nitro_level = 0
 var traction_fast = 2.5
 var traction_slow = 5
 
@@ -118,9 +119,7 @@ func _physics_process(delta):
 			for i in get_slide_collision_count():
 				var c = get_slide_collision(i)
 				if c.get_collider() is StaticBody2D or c.get_collider() is TileMap:
-					var impact := pre_velocity.project(c.get_normal()).length()
-					if impact > 200.0 and is_local and get_parent() != null and get_parent().has_method("add_trauma"):
-						get_parent().add_trauma(real_player_index, minf(impact / 1000.0, 0.4))
+					# Standard bump collision
 					break
 		_push_npc_hits()
 		
@@ -131,6 +130,33 @@ func _physics_process(delta):
 
 	acceleration = Vector2.ZERO
 	get_input()
+	
+	var shop_action = "p1_shop" if GameSettings.is_online else "p%d_shop" % (real_player_index + 1)
+	var attached_normal := Vector2.ZERO
+	
+	if nitro_level > 0 and Input.is_action_pressed(shop_action):
+		var space_state = get_world_2d().direct_space_state
+		var left_dir = -transform.y
+		var right_dir = transform.y
+		
+		var query_l = PhysicsRayQueryParameters2D.create(global_position, global_position + left_dir * 160.0)
+		query_l.exclude = [get_rid()]
+		var result_l = space_state.intersect_ray(query_l)
+		if result_l and (result_l.collider is StaticBody2D or result_l.collider is TileMap):
+			attached_normal = result_l.normal
+		else:
+			var query_r = PhysicsRayQueryParameters2D.create(global_position, global_position + right_dir * 160.0)
+			query_r.exclude = [get_rid()]
+			var result_r = space_state.intersect_ray(query_r)
+			if result_r and (result_r.collider is StaticBody2D or result_r.collider is TileMap):
+				attached_normal = result_r.normal
+
+	if attached_normal != Vector2.ZERO:
+		var wall_angle = attached_normal.orthogonal().angle()
+		if abs(angle_difference(rotation, wall_angle)) > PI / 2.0:
+			wall_angle += PI
+		rotation = lerp_angle(rotation, wall_angle, 25.0 * delta)
+		acceleration = transform.x * engine_power * (2.0 + nitro_level) # Boost engine power massively when clinging!
 		
 	apply_friction(delta)
 	calculate_steering(delta)
@@ -141,9 +167,7 @@ func _physics_process(delta):
 		for i in get_slide_collision_count():
 			var c = get_slide_collision(i)
 			if c.get_collider() is StaticBody2D or c.get_collider() is TileMap:
-				var impact := pre_velocity.project(c.get_normal()).length()
-				if impact > 200.0 and is_local and get_parent() != null and get_parent().has_method("add_trauma"):
-					get_parent().add_trauma(real_player_index, minf(impact / 1000.0, 0.4))
+				# Standard bump collision just to trigger trauma if needed
 				break
 	_push_npc_hits()
 

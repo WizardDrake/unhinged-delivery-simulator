@@ -16,7 +16,7 @@ func _ready() -> void:
 	
 	cruise_speed = 800.0 # Patrol speed
 	acceleration = 1200.0
-	steer_rate = 6.0
+	steer_rate = 15.0
 
 func _physics_process(delta: float) -> void:
 	if target_player != null and is_instance_valid(target_player):
@@ -54,7 +54,7 @@ func _current_target() -> Vector2:
 	if target_player != null and is_instance_valid(target_player):
 		if _chase_path.size() >= 2:
 			var target = _chase_path[1]
-			if global_position.distance_to(target) < 600.0 and _chase_path.size() > 2:
+			if global_position.distance_to(target) < 150.0 and _chase_path.size() > 2:
 				target = _chase_path[2]
 			return target
 			

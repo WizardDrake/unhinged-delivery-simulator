@@ -51,13 +51,7 @@ var _player_targets  : Array = []  # Array of Array[Sprite2D]
 var _ui_packages : Array[Label] = []
 var _ui_scores   : Array[Label] = []
 
-# Shop & Items state
-var _player_has_item : Array[bool] = []
-var _player_item_cooldown : Array[float] = []
-var _ui_items : Array[Label] = []
-var _ui_blind_screens : Array[ColorRect] = []
-var _ui_item_menus : Array[PanelContainer] = []
-var _ui_blind_particles : Array[CPUParticles2D] = []
+
 
 # Upgrades
 var _player_tracker_level : Array[int] = []
@@ -66,11 +60,7 @@ var _player_nitro_level : Array[int] = []
 var _player_last_upgrade_score : Array[int] = []
 var _ui_upgrade_menus : Array[PanelContainer] = []
 var _player_selected_upgrade : Array[int] = []
-var _blind_timers : Array[float] = []
-var _player_selected_item : Array[int] = []
-var _player_item_locked : Array[bool] = []
-var ITEM_NAMES = ["Peanuts", "Oil (Slippery)", "Oil (Sticky)"]
-var _oil_spills : Array[Dictionary] = []
+
 var _boot_timers : Array[float] = []
 var _cop_cooldown : Array[float] = []
 var _camera_trauma : Array[float] = []
@@ -134,12 +124,7 @@ func _ready() -> void:
 		_player_packages.append(0)
 		_player_scores.append(0)
 		_player_targets.append([])
-		_player_has_item.append(false)
-		_player_item_cooldown.append(0.0)
-		_blind_timers.append(0.0)
 		_ui_booted_labels.append(null)
-		_player_selected_item.append(0)
-		_player_item_locked.append(false)
 		_boot_timers.append(0.0)
 		_cop_cooldown.append(0.0)
 		_camera_trauma.append(0.0)
@@ -191,7 +176,7 @@ func _ready() -> void:
 
 func _setup_split_screen() -> void:
 	var ui_layer := CanvasLayer.new()
-	ui_layer.layer = 0
+	ui_layer.layer = 100
 	add_child(ui_layer)
 	
 	_ui_packages.resize(GameSettings.player_count)
@@ -199,10 +184,6 @@ func _setup_split_screen() -> void:
 	_ui_round_timers.resize(GameSettings.player_count)
 	_ui_center_labels.resize(GameSettings.player_count)
 	_ui_booted_labels.resize(GameSettings.player_count)
-	_ui_items.resize(GameSettings.player_count)
-	_ui_blind_screens.resize(GameSettings.player_count)
-	_ui_item_menus.resize(GameSettings.player_count)
-	_ui_blind_particles.resize(GameSettings.player_count)
 	_ui_upgrade_menus.resize(GameSettings.player_count)
 
 	if GameSettings.is_online:
@@ -424,13 +405,7 @@ func _build_player_hud(player_idx: int) -> void:
 	bl_vbox.add_theme_constant_override("separation", int(5 * s))
 	bl_panel.add_child(bl_vbox)
 	
-	var item_label := Label.new()
-	item_label.text = "Item: None"
-	if font != null: item_label.add_theme_font_override("font", font)
-	item_label.add_theme_font_size_override("font_size", int(24 * s))
-	item_label.add_theme_color_override("font_color", Color("#00f0ff"))
-	bl_vbox.add_child(item_label)
-	_ui_items[player_idx] = item_label
+
 	
 	var mm_hint := Label.new()
 	mm_hint.text = minimap_key + " = Map"
@@ -483,79 +458,7 @@ func _build_player_hud(player_idx: int) -> void:
 		hud.add_child(indicator)
 		hud.move_child(indicator, 0)
 
-	# ── Blind Screen (Peanuts) ───────────────────────────────────────────────
-	var blind_screen := ColorRect.new()
-	blind_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	blind_screen.color = Color(1.0, 1.0, 1.0, 0.0) # fully transparent initially
-	blind_screen.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hud.add_child(blind_screen)
-	_ui_blind_screens[player_idx] = blind_screen
 
-	var peanuts := CPUParticles2D.new()
-	peanuts.amount = 150
-	peanuts.lifetime = 2.0
-	peanuts.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
-	peanuts.emission_rect_extents = Vector2(4000, 20)
-	peanuts.position = Vector2(0, 0)
-	peanuts.direction = Vector2(0, 1)
-	peanuts.spread = 15.0
-	peanuts.initial_velocity_min = 400.0
-	peanuts.initial_velocity_max = 800.0
-	peanuts.scale_amount_min = 10.0
-	peanuts.scale_amount_max = 25.0
-	peanuts.color = Color(0.9, 0.8, 0.6)
-	peanuts.emitting = false
-	
-	var peanut_anchor := Control.new()
-	peanut_anchor.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	blind_screen.add_child(peanut_anchor)
-	peanut_anchor.add_child(peanuts)
-	_ui_blind_particles[player_idx] = peanuts
-
-	# ── Item Choice Menu ───────────────────────────────────────────────
-	var item_menu := PanelContainer.new()
-	item_menu.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	item_menu.visible = false
-	
-	var style = StyleBoxFlat.new()
-	style.bg_color = Color(0.1, 0.1, 0.1, 0.9)
-	style.border_width_left = 4
-	style.border_width_right = 4
-	style.border_width_top = 4
-	style.border_width_bottom = 4
-	style.border_color = Color(1, 0.8, 0.2)
-	item_menu.add_theme_stylebox_override("panel", style)
-	
-	var vbox := VBoxContainer.new()
-	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_theme_constant_override("separation", 15)
-	
-	var title := Label.new()
-	title.text = "CHOOSE YOUR ITEM\n(Steer: Select, Space: Confirm)"
-	if not GameSettings.is_online and player_idx == 1:
-		title.text = "CHOOSE YOUR ITEM\n(Steer: Select, /: Confirm)"
-	if font != null:
-		title.add_theme_font_override("font", font)
-	title.add_theme_font_size_override("font_size", 24)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(title)
-	
-	var options_vbox := VBoxContainer.new()
-	item_menu.set_meta("options", options_vbox)
-	for i in range(ITEM_NAMES.size()):
-		var lbl := Label.new()
-		lbl.text = ITEM_NAMES[i]
-		if font != null:
-			lbl.add_theme_font_override("font", font)
-		lbl.add_theme_font_size_override("font_size", 32)
-		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		options_vbox.add_child(lbl)
-	vbox.add_child(options_vbox)
-	
-	item_menu.add_child(vbox)
-	hud.add_child(item_menu)
-	_ui_item_menus[player_idx] = item_menu
-	
 	# ── Upgrade Menu ───────────────────────────────────────────────
 	var upgrade_menu := PanelContainer.new()
 	upgrade_menu.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
@@ -575,9 +478,9 @@ func _build_player_hud(player_idx: int) -> void:
 	up_vbox.add_theme_constant_override("separation", int(15 * s))
 	
 	var up_title := Label.new()
-	up_title.text = "10 DELIVERIES! CHOOSE UPGRADE\n(Steer: Select, Space: Confirm)"
+	up_title.text = "5 DELIVERIES! CHOOSE UPGRADE\n(Steer: Select, Space: Confirm)"
 	if not GameSettings.is_online and player_idx == 1:
-		up_title.text = "10 DELIVERIES! CHOOSE UPGRADE\n(Steer: Select, /: Confirm)"
+		up_title.text = "5 DELIVERIES! CHOOSE UPGRADE\n(Steer: Select, /: Confirm)"
 	if font != null: up_title.add_theme_font_override("font", font)
 	up_title.add_theme_font_size_override("font_size", int(32 * s))
 	up_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -603,7 +506,7 @@ func _process(delta: float) -> void:
 	var t_pressed = Input.is_key_pressed(KEY_T)
 	if t_pressed and not _debug_t_pressed:
 		_player_scores[_local_player_idx] += 1
-		var current_tier = _player_scores[_local_player_idx] / 10
+		var current_tier = _player_scores[_local_player_idx] / 5
 		if current_tier > _player_last_upgrade_score[_local_player_idx]:
 			_player_last_upgrade_score[_local_player_idx] = current_tier
 			_show_upgrade_menu(_local_player_idx)
@@ -612,19 +515,9 @@ func _process(delta: float) -> void:
 	
 	_process_game_state(delta)
 
-	# Process blind timers
-	for p in range(GameSettings.player_count):
-		if _blind_timers[p] > 0.0:
-			_blind_timers[p] -= delta
-			var alpha = minf(1.0, _blind_timers[p] / 1.0) # fade out over last second
-			if _ui_blind_screens[p] != null:
-				_ui_blind_screens[p].color = Color(1.0, 1.0, 1.0, alpha * 0.8)
-			if _blind_timers[p] <= 0.0:
-				if _ui_blind_particles[p] != null:
-					_ui_blind_particles[p].emitting = false
-				if _ui_blind_screens[p] != null:
-					_ui_blind_screens[p].color = Color(1.0, 1.0, 1.0, 0.0)
 
+
+	for p in range(GameSettings.player_count):
 		# Process boot timers & cop cooldown
 		if _boot_timers[p] > 0.0:
 			_boot_timers[p] -= delta
@@ -638,29 +531,7 @@ func _process(delta: float) -> void:
 		if _cop_cooldown[p] > 0.0:
 			_cop_cooldown[p] -= delta
 
-	# Process oil spills
-	var players_to_process = [_local_player_idx] if GameSettings.is_online else range(GameSettings.player_count)
-	for p in players_to_process:
-		if p >= _cars.size() or _cars[p] == null: continue
-		var on_oil = false
-		var oil_type = 0
-		var hit_spill = null
-		for spill in _oil_spills:
-			if spill["owner"] != p and _cars[p].global_position.distance_to(spill["pos"]) < 120.0:
-				on_oil = true
-				oil_type = spill["type"]
-				hit_spill = spill
-				break
-		if on_oil and not _cars[p].frozen:
-			if oil_type == 1: # Slippery Oil - Extreme spinout
-				if _cars[p].has_method("trigger_spinout"):
-					_cars[p].trigger_spinout()
-				if is_instance_valid(hit_spill["node"]):
-					hit_spill["node"].queue_free()
-				_oil_spills.erase(hit_spill)
-			elif oil_type == 2: # Sticky Oil - Extreme slowdown
-				_cars[p].velocity *= 0.85
-				_cars[p].rotation += sin(Time.get_ticks_msec()/20.0) * 0.5 * delta
+
 
 	# Update cameras to follow cars
 	for p in range(GameSettings.player_count):
@@ -725,14 +596,7 @@ func _process(delta: float) -> void:
 
 		var at_po = (_post_office != null and car_pos.distance_to(_post_office.global_position) < 2000.0)
 
-		# Check Shop & Items
-		if _player_item_cooldown[p] > 0.0:
-			_player_item_cooldown[p] -= delta
-			if _player_item_cooldown[p] <= 0.0:
-				_player_item_cooldown[p] = 0.0
-			_update_ui(p)
 
-		var is_shopping = (_ui_item_menus[p] != null and _ui_item_menus[p].visible)
 
 		var shop_action = "p1_shop" if GameSettings.is_online else "p%d_shop" % (p + 1)
 		var right_action = "p1_steer_right" if GameSettings.is_online else "p%d_steer_right" % (p + 1)
@@ -751,39 +615,7 @@ func _process(delta: float) -> void:
 				_update_upgrade_ui(p)
 			continue
 
-		if Input.is_action_just_pressed(shop_action):
-			if at_po and not _player_item_locked[p] and _player_scores[p] >= 5:
-				if not is_shopping:
-					# Open menu
-					if _ui_item_menus[p] != null:
-						_ui_item_menus[p].visible = true
-					_cars[p].frozen = true
-				else:
-					# Confirm choice
-					_player_item_locked[p] = true
-					_player_has_item[p] = true
-					_player_item_cooldown[p] = 0.0
-					if _ui_item_menus[p] != null:
-						_ui_item_menus[p].visible = false
-					_cars[p].frozen = false
-					_update_ui(p)
-			elif _player_has_item[p] and _player_item_cooldown[p] <= 0.0:
-				_player_item_cooldown[p] = 60.0
-				_use_item(p, _player_selected_item[p])
-				_update_ui(p)
 
-		# If shopping, cycle with steer left/right
-		if is_shopping:
-			if Input.is_action_just_pressed(right_action):
-				_player_selected_item[p] = (_player_selected_item[p] + 1) % ITEM_NAMES.size()
-				_update_ui(p)
-			elif Input.is_action_just_pressed(left_action):
-				_player_selected_item[p] = (_player_selected_item[p] - 1 + ITEM_NAMES.size()) % ITEM_NAMES.size()
-				_update_ui(p)
-			# Close shop if they somehow leave PO
-			if not at_po:
-				_ui_item_menus[p].visible = false
-				_cars[p].frozen = false
 
 		# Check Post Office (pickup — no box thrown)
 		if _post_office != null and _player_packages[p] == 0 and speed < 400.0:
@@ -872,6 +704,7 @@ func _process_game_state(_delta_unused: float) -> void:
 
 
 func _end_game() -> void:
+	if _game_state == "finished": return
 	_game_state = "finished"
 	for car in _cars:
 		if car != null:
@@ -987,56 +820,7 @@ func _rpc_end_game(scores: Array) -> void:
 		_end_game()
 
 
-func _use_item(user_idx: int, item_type: int) -> void:
-	if GameSettings.is_online:
-		_rpc_use_item.rpc(user_idx, item_type)
-	if item_type == 0:
-		_trigger_blind(user_idx)
-	elif item_type == 1 or item_type == 2:
-		_spawn_oil_spill(user_idx, item_type)
 
-
-@rpc("any_peer", "call_remote", "reliable")
-func _rpc_use_item(user_idx: int, item_type: int) -> void:
-	if item_type == 0:
-		_trigger_blind(user_idx)
-	elif item_type == 1 or item_type == 2:
-		_spawn_oil_spill(user_idx, item_type)
-
-
-func _trigger_blind(user_idx: int) -> void:
-	for p in range(GameSettings.player_count):
-		if p != user_idx:
-			_blind_timers[p] = 4.0  # Increased to 4 seconds
-			if p < _camera_trauma.size():
-				_camera_trauma[p] = 1.0 # Screen shake
-			if p < _ui_blind_particles.size() and _ui_blind_particles[p] != null:
-				_ui_blind_particles[p].amount = 300 # More particles!
-				_ui_blind_particles[p].emitting = true
-				_ui_blind_particles[p].restart()
-
-
-func _spawn_oil_spill(user_idx: int, type: int) -> void:
-	if _cars[user_idx] == null: return
-	var spill_pos = _cars[user_idx].global_position
-	
-	var spill = Sprite2D.new()
-	if type == 1:
-		spill.texture = load("res://assets/oil_spill_1.svg")
-	else:
-		spill.texture = load("res://assets/oil_spill_3.svg")
-		
-	# Start tiny for a pop-in effect
-	spill.scale = Vector2(0.1, 0.1) 
-	spill.global_position = spill_pos
-	spill.z_index = 0
-	add_child(spill)
-	
-	# Bounce scale animation
-	var tween = create_tween().set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
-	tween.tween_property(spill, "scale", Vector2(0.8, 0.8), 0.8)
-	
-	_oil_spills.append({"pos": spill_pos, "type": type, "owner": user_idx, "node": spill})
 
 
 func report_npc_crash(player_idx: int, pos: Vector2) -> void:
@@ -1243,7 +1027,7 @@ func _update_upgrade_ui(pidx: int) -> void:
 	
 	labels[0].text = t_txt
 	labels[1].text = "Storage Lvl " + str(s_lvl+1) + " (+5 Pkgs)"
-	labels[2].text = "Nitro Lvl " + str(n_lvl+1) + " (Speed Up)"
+	labels[2].text = "Nitro Lvl " + str(n_lvl+1) + " (Wall Grind)"
 	
 	for i in range(3):
 		if i == _player_selected_upgrade[pidx]:
@@ -1260,7 +1044,7 @@ func _apply_upgrade(pidx: int, choice: int) -> void:
 	elif choice == 2:
 		_player_nitro_level[pidx] += 1
 		if _cars[pidx] != null:
-			_cars[pidx].engine_power += 300
+			_cars[pidx].nitro_level = _player_nitro_level[pidx]
 			
 	_ui_upgrade_menus[pidx].visible = false
 	if _cars[pidx] != null:
@@ -1275,41 +1059,14 @@ func _update_ui(player_idx: int) -> void:
 			_ui_packages[player_idx].text = "Packages: " + str(_player_packages[player_idx])
 	if player_idx < _ui_scores.size() and _ui_scores[player_idx] != null:
 		_ui_scores[player_idx].text = "Score: " + str(_player_scores[player_idx])
-	if player_idx < _ui_items.size() and _ui_items[player_idx] != null:
-		var item_name = ITEM_NAMES[_player_selected_item[player_idx]]
-		if _boot_timers[player_idx] > 0.0:
-			if player_idx < _ui_booted_labels.size() and _ui_booted_labels[player_idx] != null:
-				_ui_booted_labels[player_idx].text = "BOOTED! %ds" % int(ceil(_boot_timers[player_idx]))
-		else:
-			if player_idx < _ui_booted_labels.size() and _ui_booted_labels[player_idx] != null:
-				_ui_booted_labels[player_idx].text = ""
+		
+	if _boot_timers[player_idx] > 0.0:
+		if player_idx < _ui_booted_labels.size() and _ui_booted_labels[player_idx] != null:
+			_ui_booted_labels[player_idx].text = "BOOTED! %ds" % int(ceil(_boot_timers[player_idx]))
+	else:
+		if player_idx < _ui_booted_labels.size() and _ui_booted_labels[player_idx] != null:
+			_ui_booted_labels[player_idx].text = ""
 
-		if not _player_item_locked[player_idx]:
-			var is_shopping = (_ui_item_menus[player_idx] != null and _ui_item_menus[player_idx].visible)
-			if is_shopping:
-				_ui_items[player_idx].text = "Select Item: " + item_name + " (Space: Confirm)"
-			else:
-				if _player_scores[player_idx] >= 5:
-					_ui_items[player_idx].text = "Press Space at PO to open Shop!"
-				else:
-					_ui_items[player_idx].text = "Shop Unlocks at 5 Points!"
-		elif not _player_has_item[player_idx]:
-			_ui_items[player_idx].text = "Item: " + item_name + " (Empty)"
-		elif _player_item_cooldown[player_idx] > 0.0:
-			_ui_items[player_idx].text = "Item: %ds" % int(ceil(_player_item_cooldown[player_idx]))
-		else:
-			_ui_items[player_idx].text = "Item: " + item_name + " [READY]"
-
-	if player_idx < _ui_item_menus.size() and _ui_item_menus[player_idx] != null:
-		var opts = _ui_item_menus[player_idx].get_meta("options")
-		for i in range(opts.get_child_count()):
-			var lbl = opts.get_child(i) as Label
-			if i == _player_selected_item[player_idx]:
-				lbl.add_theme_color_override("font_color", Color(0.2, 1.0, 0.2))
-				lbl.text = "> " + ITEM_NAMES[i] + " <"
-			else:
-				lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-				lbl.text = ITEM_NAMES[i]
 
 
 func _input(event: InputEvent) -> void:
