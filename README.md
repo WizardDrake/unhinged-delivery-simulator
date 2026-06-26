@@ -1,7 +1,7 @@
 # Unhinged Delivery Simulator
 ## Features
 - 2 player local play
-- 4 player P2P online play
+- 4 player P2P online play(only on desktop)
 - Upgrades
 - Police
 ## How To Play (after getting the game)
